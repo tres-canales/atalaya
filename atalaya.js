@@ -1,0 +1,1072 @@
+// Atalaya: lee las cifras públicas de tres canales de YouTube y las dibuja.
+// Sin dependencias. Todo texto que viene de YouTube (títulos, descripciones)
+// entra al documento como texto, nunca como HTML.
+'use strict';
+
+// Aplicación web de Apps Script que consulta la YouTube Data API y responde en JSON.
+const FUENTE = 'https://script.google.com/macros/s/AKfycbxdRWV_5JxbMyXQ3rAZdO7gWQhOay_ecISRB9x05wuZzLOQ5dTqOuPunSJeYnksXPZKTg/exec?datos=1';
+// El servidor guarda cada lectura 45 s: leer más seguido devolvería lo mismo.
+const CADA_MS = 60000;
+const ESPERA_MS = 25000;
+const HORA = 3600000;
+const DIA = 86400000;
+
+// El orden es el del servidor (índice de canal en «historia» y «mov») y fija
+// el color de cada serie: un canal conserva su color aunque otro falte.
+const CANALES = [
+  { id: 'UC4wVH_TILBbXgOyWX1ySK5Q', clave: 'pd', nombre: 'Peso Duro' },
+  { id: 'UCO988qGZH9ApN8vCq91aenQ', clave: 'evl', nombre: 'Esto Viene de Lejos' },
+  { id: 'UCBBsfQy7mpbIWgSIsLwQVLw', clave: 'pa', nombre: 'Psique Ajena' },
+];
+const PERIODOS = {
+  '24h': { nombre: '24 horas', cubos: 24, unidad: 'hora' },
+  '7d': { nombre: '7 días', cubos: 7, unidad: 'día' },
+  '30d': { nombre: '30 días', cubos: 30, unidad: 'día' },
+};
+
+const estado = {
+  modelo: null,
+  periodo: '24h',
+  orden: { campo: 'publicado', sentido: -1 },
+  canal: '',
+  tipo: '',
+  ultimoIntento: 0,
+  reloj: 0,
+  pulso: null,
+};
+
+/* ---------- Utilidades ---------- */
+
+const $ = (selector, raiz) => (raiz || document).querySelector(selector);
+const sinMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+function recordar(clave) {
+  try { return localStorage.getItem('atalaya.' + clave); } catch (error) { return null; }
+}
+function guardar(clave, valor) {
+  try {
+    if (valor === null) localStorage.removeItem('atalaya.' + clave);
+    else localStorage.setItem('atalaya.' + clave, valor);
+  } catch (error) {
+    // Almacenamiento lleno o bloqueado: la página sigue sin recordar la preferencia.
+  }
+}
+function esDueno() { return document.documentElement.hasAttribute('data-dueno'); }
+
+function agregar(nodo, hijos) {
+  for (const h of hijos) {
+    if (h === null || h === undefined || h === false) continue;
+    if (Array.isArray(h)) agregar(nodo, h);
+    else nodo.append(h instanceof Node ? h : document.createTextNode(String(h)));
+  }
+  return nodo;
+}
+function crear(etiqueta, atributos, ...hijos) {
+  const nodo = document.createElement(etiqueta);
+  for (const k in atributos) {
+    const v = atributos[k];
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'clase') nodo.className = v;
+    else if (k === 'datos') Object.assign(nodo.dataset, v);
+    else nodo.setAttribute(k, v === true ? '' : v);
+  }
+  return agregar(nodo, hijos);
+}
+function trazar(etiqueta, atributos, ...hijos) {
+  const nodo = document.createElementNS('http://www.w3.org/2000/svg', etiqueta);
+  for (const k in atributos) {
+    if (atributos[k] !== null && atributos[k] !== undefined) nodo.setAttribute(k, atributos[k]);
+  }
+  return agregar(nodo, hijos);
+}
+function reemplazar(nodo, hijos) {
+  nodo.textContent = '';
+  return agregar(nodo, hijos);
+}
+function enlaceExterno(href, hijos, atributos) {
+  return crear('a', Object.assign({ href: href, target: '_blank', rel: 'noopener noreferrer' }, atributos), hijos);
+}
+
+const numero = new Intl.NumberFormat('es-DO');
+const compacto = new Intl.NumberFormat('es-DO', { notation: 'compact', maximumFractionDigits: 1 });
+const horaMinuto = new Intl.DateTimeFormat('es-DO', { hour: 'numeric', minute: '2-digit' });
+const horaSola = new Intl.DateTimeFormat('es-DO', { hour: 'numeric' });
+const fechaNumerica = new Intl.DateTimeFormat('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const fechaConHora = new Intl.DateTimeFormat('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+const diaYMes = new Intl.DateTimeFormat('es-DO', { day: 'numeric', month: 'short' });
+const diaDeSemana = new Intl.DateTimeFormat('es-DO', { weekday: 'short', day: 'numeric' });
+const diaCompleto = new Intl.DateTimeFormat('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
+
+const fmt = (n) => numero.format(n);
+function cuantos(n, uno, varios) { return fmt(n) + ' ' + (n === 1 ? uno : varios); }
+// «la 1:05 p. m.» o «las 11:59 p. m.»
+function laHora(t) {
+  const texto = horaMinuto.format(t);
+  return (/^1:/.test(texto) ? 'la ' : 'las ') + texto;
+}
+function lapso(ms) {
+  const minutos = Math.max(1, Math.round(ms / 60000));
+  if (minutos < 60) return cuantos(minutos, 'minuto', 'minutos');
+  const horas = Math.round(ms / HORA);
+  if (horas < 48) return cuantos(horas, 'hora', 'horas');
+  return cuantos(Math.round(ms / DIA), 'día', 'días');
+}
+function duracion(segundos) {
+  if (segundos < 60) return segundos + ' s';
+  const m = Math.floor(segundos / 60), s = segundos % 60;
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+function primerParrafo(texto) {
+  const parrafo = String(texto).split(/\n\s*\n/)[0].trim();
+  if (parrafo.length <= 150) return parrafo;
+  const corte = parrafo.slice(0, 150);
+  const punto = corte.lastIndexOf('. ');
+  return punto > 40 ? corte.slice(0, punto + 1) : corte.replace(/\s+\S*$/, '') + '…';
+}
+function sumar(lista) { return lista.reduce((a, b) => a + b, 0); }
+// «p. m.» ya termina en punto: no se escribe otro.
+function conPunto(texto) { return /\.$/.test(texto) ? texto : texto + '.'; }
+
+/* ---------- Modelo: de la respuesta del servidor a lo que se dibuja ---------- */
+
+function preparar(d) {
+  const ahora = Date.parse(d.hora) || Date.now();
+  const porNombre = {};
+  const canales = CANALES.map(function (c, ci) {
+    const s = (d.canales || []).find((x) => x.id === c.id) || {};
+    porNombre[s.nombre || c.nombre] = ci;
+    const usuario = s.usuario && s.usuario.charAt(0) === '@' ? s.usuario : '';
+    return {
+      ci: ci, id: c.id, clave: c.clave, nombre: c.nombre,
+      falta: !s.id || !!s.error,
+      subs: Number(s.subs) || 0,
+      vistasCanal: Number(s.vistas) || 0,
+      total: Number(s.videos) || 0,
+      logo: s.logo || '',
+      usuario: usuario,
+      url: usuario ? 'https://www.youtube.com/' + usuario : 'https://www.youtube.com/channel/' + c.id,
+      descripcion: primerParrafo(s.descripcion || ''),
+    };
+  });
+
+  const videos = [];
+  for (const v of d.videos || []) {
+    const ci = porNombre[v.canal];
+    if (ci === undefined || !v.id) continue;
+    // Mismo criterio que la hoja de cálculo: hasta 3 minutos es un Short.
+    const corto = Number(v.seg) <= 180;
+    videos.push({
+      id: v.id, ci: ci, titulo: String(v.titulo || ''), publicado: Date.parse(v.publicado) || 0,
+      seg: Number(v.seg) || 0, corto: corto,
+      vistas: Number(v.vistas) || 0, likes: Number(v.likes) || 0, coms: Number(v.coms) || 0,
+      url: corto ? 'https://www.youtube.com/shorts/' + v.id : 'https://www.youtube.com/watch?v=' + v.id,
+    });
+  }
+  for (const c of canales) {
+    const suyos = videos.filter((v) => v.ci === c.ci);
+    // El total del canal que da YouTube llega con horas de retraso respecto de
+    // sus videos; se muestra el mayor de los dos.
+    c.vistas = Math.max(c.vistasCanal, sumar(suyos.map((v) => v.vistas)));
+    c.ultimo = suyos.reduce((a, v) => (!a || v.publicado > a.publicado ? v : a), null);
+  }
+
+  const mov = d.mov || {};
+  const diario = {};
+  let registroDesde = Infinity;
+  for (const id in d.vdia || {}) {
+    const fila = d.vdia[id];
+    if (!Array.isArray(fila) || typeof fila[0] !== 'number' || !Array.isArray(fila[1])) continue;
+    const puntos = fila[1].map((p) => ({ t: p[0] * 60000, v: Number(p[1]) || 0 })).sort((a, b) => a.t - b.t);
+    if (!puntos.length) continue;
+    diario[id] = { ci: fila[0], puntos: puntos };
+    registroDesde = Math.min(registroDesde, puntos[0].t);
+  }
+
+  return {
+    ahora: ahora, canales: canales, videos: videos,
+    historia: (d.historia || []).filter((f) => Array.isArray(f) && f.length >= 3),
+    bitacoraDesde: Number(mov.desde) || 0,
+    h1: mov.h1 || {}, h24: mov.h24 || {},
+    porHora: mov.porHora || [],
+    cambiosSubs: mov.subs || [],
+    diario: diario,
+    registroDesde: registroDesde,
+  };
+}
+
+// Vistas ganadas por cubo (hora o día) y canal. En 24 horas salen de la
+// bitácora; en 7 y 30 días, de la lectura diaria de cada video.
+function cubosDeVistas(m, clave) {
+  const cubos = [];
+  const n = PERIODOS[clave].cubos;
+  if (clave === '24h') {
+    const ultima = Math.floor(m.ahora / HORA) * HORA;
+    for (let i = n - 1; i >= 0; i--) cubos.push({ t: ultima - i * HORA, fin: ultima - i * HORA + HORA, valores: [0, 0, 0] });
+    const posicion = {};
+    cubos.forEach(function (c, i) { posicion[c.t] = i; });
+    for (const f of m.porHora) {
+      const i = posicion[f[0]];
+      if (i !== undefined && cubos[i].valores[f[1]] !== undefined) cubos[i].valores[f[1]] += Number(f[2]) || 0;
+    }
+    return cubos;
+  }
+  const hoy = new Date(m.ahora);
+  hoy.setHours(0, 0, 0, 0);
+  for (let i = n - 1; i >= 0; i--) {
+    const dia = new Date(hoy);
+    dia.setDate(hoy.getDate() - i);
+    cubos.push({ t: dia.getTime(), fin: 0, valores: [0, 0, 0] });
+  }
+  cubos.forEach(function (c, i) { c.fin = i + 1 < cubos.length ? cubos[i + 1].t : m.ahora; });
+  const anotar = function (t, ci, cantidad) {
+    if (t < cubos[0].t || cantidad <= 0 || ci > 2) return;
+    let i = cubos.length - 1;
+    while (i > 0 && cubos[i].t > t) i--;
+    cubos[i].valores[ci] += cantidad;
+  };
+  const vivos = {};
+  for (const v of m.videos) vivos[v.id] = v;
+  for (const id in m.diario) {
+    const s = m.diario[id], vivo = vivos[id];
+    const serie = s.puntos.slice();
+    if (vivo) serie.push({ t: m.ahora, v: vivo.vistas });
+    // La diferencia entre dos lecturas se anota en el día de la primera.
+    for (let k = 1; k < serie.length; k++) anotar(serie[k - 1].t, s.ci, serie[k].v - serie[k - 1].v);
+    // Un video publicado con el registro ya en marcha: lo que sumó antes de su primera lectura.
+    if (vivo && vivo.publicado > m.registroDesde) anotar(vivo.publicado, s.ci, serie[0].v);
+  }
+  for (const v of m.videos) {
+    if (!m.diario[v.id] && v.publicado > m.registroDesde) anotar(v.publicado, v.ci, v.vistas);
+  }
+  return cubos;
+}
+
+// Vistas que un video ganó en el período, con la misma cuenta que las columnas.
+function ganado(m, v, clave, inicio) {
+  if (clave === '24h') return m.h24[v.id] || 0;
+  if (v.publicado >= inicio && v.publicado > m.registroDesde) return v.vistas;
+  const s = m.diario[v.id];
+  if (!s) return null;
+  const base = s.puntos.find((p) => p.t >= inicio) || s.puntos[s.puntos.length - 1];
+  return Math.max(0, v.vistas - base.v);
+}
+
+// Antes de que el servidor estabilizara las lecturas, YouTube alternaba entre
+// dos valores con minutos de diferencia. Una lectura que vuelve al valor
+// anterior en menos de 15 minutos no es un cambio real.
+function sinRebotes(filas) {
+  const limpias = [];
+  for (let i = 0; i < filas.length; i++) {
+    const previa = limpias[limpias.length - 1], siguiente = filas[i + 1];
+    if (previa && siguiente && filas[i].v !== previa.v && siguiente.v === previa.v && siguiente.t - filas[i].t < 15 * 60000) continue;
+    limpias.push(filas[i]);
+  }
+  return limpias;
+}
+
+function seriesDeSubs(m, inicio) {
+  return m.canales.map(function (c) {
+    const filas = m.historia.filter((f) => f[1] === c.ci).map((f) => ({ t: f[0], v: Number(f[2]) || 0 })).sort((a, b) => a.t - b.t);
+    const cambios = [];
+    for (const f of sinRebotes(filas)) {
+      if (!cambios.length || cambios[cambios.length - 1].v !== f.v) cambios.push(f);
+    }
+    const puntos = [];
+    let anterior = null;
+    for (const f of cambios) {
+      if (f.t < inicio) anterior = f;
+      else puntos.push(f);
+    }
+    if (anterior) puntos.unshift({ t: inicio, v: anterior.v });
+    if (!c.falta && (!puntos.length || puntos[puntos.length - 1].v !== c.subs)) puntos.push({ t: m.ahora, v: c.subs });
+    return { ci: c.ci, puntos: puntos };
+  });
+}
+
+/* ---------- Parte ---------- */
+
+function tituloEntreComillas(v) {
+  // Un título que ya trae comillas angulares se cita con comillas inglesas.
+  const par = /[«»]/.test(v.titulo) ? ['“', '”'] : ['«', '»'];
+  return [par[0], enlaceExterno(v.url, v.titulo), par[1]];
+}
+function enlaceDeCanal(c) {
+  return enlaceExterno(c.url, c.nombre, { datos: { serie: c.clave } });
+}
+
+function pintarParte(m) {
+  const vivos = m.canales.filter((c) => !c.falta);
+  const sujeto = vivos.length === 3 ? 'los tres canales suman' : vivos.length === 1 ? 'el canal suma' : 'los canales suman';
+  const hora = laHora(m.ahora);
+  reemplazar($('#parte-lema'), [
+    'A ', hora, ', ', sujeto, ' ',
+    crear('a', { href: '#suscriptores' }, cuantos(sumar(vivos.map((c) => c.subs)), 'suscriptor', 'suscriptores')), ' y ',
+    crear('a', { href: '#vistas' }, cuantos(sumar(vivos.map((c) => c.vistas)), 'vista', 'vistas')), ' en ',
+    crear('a', { href: '#videos' }, cuantos(sumar(vivos.map((c) => c.total)), 'video', 'videos')), '.',
+  ]);
+
+  const frases = [];
+  const ultimo = m.videos.reduce((a, v) => (!a || v.publicado > a.publicado ? v : a), null);
+  if (ultimo) {
+    const edad = m.ahora - ultimo.publicado;
+    const canal = enlaceDeCanal(m.canales[ultimo.ci]);
+    if (edad < HORA) {
+      frases.push(['Lo último es ', tituloEntreComillas(ultimo), ', de ', canal, ': salió hace ', lapso(edad), ' y lleva ', cuantos(ultimo.vistas, 'vista', 'vistas'), '.']);
+    } else {
+      frases.push(['Lo último que salió es ', tituloEntreComillas(ultimo), ', de ', canal, ': ', cuantos(ultimo.vistas, 'vista', 'vistas'), ' en ', lapso(edad), '.']);
+    }
+  }
+
+  const entradas = sumar(Object.keys(m.h1).map((id) => Number(m.h1[id]) || 0));
+  const joven = m.bitacoraDesde > 0 && m.ahora - m.bitacoraDesde < HORA;
+  if (entradas > 0) {
+    const cuando = joven ? 'Desde ' + laHora(m.bitacoraDesde) : 'En la última hora';
+    const verbo = entradas === 1 ? ' entró ' : ' entraron ';
+    const primero = m.videos.filter((v) => m.h1[v.id] > 0).sort((a, b) => m.h1[b.id] - m.h1[a.id])[0];
+    const frase = [cuando, verbo, cuantos(entradas, 'vista', 'vistas')];
+    if (primero && m.h1[primero.id] === entradas) frase.push(entradas === 1 ? ', para ' : ', todas para ', tituloEntreComillas(primero));
+    else if (primero) frase.push('; ', fmt(m.h1[primero.id]), m.h1[primero.id] === 1 ? ' fue para ' : ' fueron para ', tituloEntreComillas(primero));
+    frase.push('.');
+    frases.push(frase);
+  } else if (m.bitacoraDesde > 0 && !joven) {
+    frases.push(['En la última hora no se movió ningún contador.']);
+  }
+
+  const netos = [0, 0, 0];
+  for (const f of m.cambiosSubs) if (netos[f[1]] !== undefined) netos[f[1]] += Number(f[2]) || 0;
+  const conCambio = m.canales.filter((c) => netos[c.ci] !== 0);
+  if (conCambio.length) {
+    const frase = [];
+    conCambio.forEach(function (c, i) {
+      if (i > 0) frase.push(i === conCambio.length - 1 ? ' y ' : ', ');
+      frase.push(enlaceDeCanal(c), netos[c.ci] > 0 ? ' ganó ' : ' perdió ', cuantos(Math.abs(netos[c.ci]), 'suscriptor', 'suscriptores'));
+    });
+    frase.push(' en las últimas 24 horas.');
+    frases.push(frase);
+  }
+
+  const resto = $('#parte-resto');
+  resto.textContent = '';
+  frases.forEach(function (f, i) {
+    if (i > 0) resto.append(' ');
+    agregar(resto, f);
+  });
+}
+
+/* ---------- Tríptico de canales ---------- */
+
+function ponerCifra(nodo, valor) {
+  const antes = nodo.dataset.valor === undefined ? null : Number(nodo.dataset.valor);
+  nodo.dataset.valor = valor;
+  if (antes === null || antes === valor || sinMovimiento.matches) {
+    nodo.textContent = fmt(valor);
+    return;
+  }
+  // Reinicia el subrayado aunque la clase ya estuviera puesta.
+  nodo.classList.remove('cambio');
+  void nodo.offsetWidth;
+  nodo.classList.add('cambio');
+  const inicio = performance.now();
+  const cuadro = function (t) {
+    const k = Math.min(1, (t - inicio) / 700);
+    const meta = Number(nodo.dataset.valor);
+    if (k >= 1 || meta !== valor) { nodo.textContent = fmt(meta); return; }
+    nodo.textContent = fmt(Math.round(antes + (valor - antes) * (1 - Math.pow(1 - k, 3))));
+    requestAnimationFrame(cuadro);
+  };
+  requestAnimationFrame(cuadro);
+}
+
+function miniatura(v, clase, tamano) {
+  const img = crear('img', { src: 'https://i.ytimg.com/vi/' + v.id + '/' + tamano + '.jpg', alt: '', loading: 'lazy', decoding: 'async' });
+  // La miniatura va junto al título, que ya es un enlace al mismo video.
+  return enlaceExterno(v.url, img, { clase: clase + (v.corto ? ' short' : ''), tabindex: '-1', 'aria-hidden': 'true' });
+}
+
+function cifraDeVideo(v, texto, seccion) {
+  if (!esDueno()) return texto;
+  return enlaceExterno('https://studio.youtube.com/video/' + v.id + '/' + seccion, texto);
+}
+
+function pintarCanales(m) {
+  for (const c of m.canales) {
+    const bloque = document.querySelector('[data-canal="' + c.id + '"]');
+    if (!bloque || c.falta) continue;
+    const campo = (nombre) => bloque.querySelectorAll('[data-campo="' + nombre + '"]');
+    campo('canal').forEach(function (a) { a.href = c.url; });
+    const logo = campo('logo')[0];
+    if (c.logo && logo.getAttribute('src') !== c.logo) { logo.src = c.logo; logo.hidden = false; }
+    if (c.usuario) campo('usuario')[0].textContent = c.usuario;
+    campo('descripcion')[0].textContent = c.descripcion;
+    const cifras = [['subs', c.subs, 'suscriptor', 'suscriptores'], ['vistas', c.vistas, 'vista', 'vistas'], ['videos', c.total, 'video', 'videos']];
+    let caracteres = 0;
+    for (const [nombre, valor, uno, varios] of cifras) {
+      const nodo = campo(nombre)[0];
+      ponerCifra(nodo, valor);
+      nodo.closest('div').querySelector('dt').textContent = valor === 1 ? uno : varios;
+      // Una cifra corta ocupa al menos lo que su rótulo, que mide unos tres dígitos.
+      caracteres += Math.max(fmt(valor).length, 3);
+    }
+    bloque.querySelector('.canal-cifras').style.setProperty('--n', caracteres);
+
+    const caja = campo('ultimo')[0];
+    const v = c.ultimo;
+    if (!v) {
+      reemplazar(caja, [crear('p', { clase: 'ultimo-dato' }, 'Sin videos publicados.')]);
+      caja.dataset.video = '';
+      continue;
+    }
+    if (caja.dataset.video !== v.id) {
+      caja.dataset.video = v.id;
+      reemplazar(caja, [
+        crear('h3', null, 'Lo último'),
+        crear('div', { clase: 'ultimo' },
+          miniatura(v, 'ultimo-mini', 'hq720'),
+          crear('div', { clase: 'ultimo-texto' },
+            crear('p', { clase: 'ultimo-titulo' }, enlaceExterno(v.url, v.titulo)),
+            crear('p', { clase: 'ultimo-dato' }))),
+      ]);
+    }
+    reemplazar($('.ultimo-dato', caja), [
+      (v.corto ? 'Short de ' : 'Video de ') + duracion(v.seg) + ', hace ' + lapso(m.ahora - v.publicado) + '. ',
+      cifraDeVideo(v, cuantos(v.vistas, 'vista', 'vistas'), 'analytics/tab-overview/period-default'), '.',
+    ]);
+  }
+}
+
+/* ---------- Gráficas ---------- */
+
+function pasoLimpio(alcance, cortes) {
+  const bruto = alcance / cortes;
+  const potencia = Math.pow(10, Math.floor(Math.log10(bruto)));
+  const f = bruto / potencia;
+  return Math.max(1, (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * potencia);
+}
+function marcasEntre(desde, hasta, paso) {
+  const marcas = [];
+  for (let v = desde; v <= hasta + paso / 1000; v += paso) marcas.push(v);
+  return marcas;
+}
+function rotuloDeEje(tope) {
+  // Un solo estilo por eje: completo hasta 9,999; compacto si el eje llega a 10,000.
+  return tope >= 10000 ? (v) => compacto.format(v) : fmt;
+}
+function anchoDeRotulos(rotulos) {
+  return Math.max.apply(null, rotulos.map((r) => r.length)) * 7.4 + 12;
+}
+function medidas(lienzo) {
+  const ancho = Math.max(260, Math.round(lienzo.clientWidth));
+  return { ancho: ancho, alto: ancho < 520 ? 250 : 310 };
+}
+
+// Globo de una gráfica: se crea una vez y se reutiliza entre lecturas.
+function globoDe(lienzo) {
+  let globo = $('.globo', lienzo);
+  if (!globo) {
+    globo = crear('div', { clase: 'globo', role: 'status', hidden: true });
+    lienzo.append(globo);
+  }
+  return globo;
+}
+function filaDeGlobo(clave, valor, nombre) {
+  return crear('li', clave ? { datos: { serie: clave } } : { clase: 'total' },
+    clave ? crear('span', { clase: 'clave' }) : crear('span'),
+    crear('span', { clase: 'nombre' }, nombre),
+    crear('strong', null, valor));
+}
+function colocarGlobo(lienzo, globo, x, anchoZona) {
+  globo.hidden = false;
+  const ancho = lienzo.clientWidth;
+  let izquierda = x + anchoZona / 2 + 10;
+  if (izquierda + globo.offsetWidth > ancho) izquierda = x - anchoZona / 2 - 10 - globo.offsetWidth;
+  globo.style.left = Math.max(0, izquierda) + 'px';
+  globo.style.top = '26px';
+}
+
+// Puntero y teclado comparten una misma «posición activa». mover(null) la quita.
+function interaccion(raiz, lienzo, opciones) {
+  let activa = null;
+  const fijar = function (posicion) {
+    activa = posicion;
+    opciones.mover(posicion);
+  };
+  raiz.addEventListener('pointermove', function (e) {
+    const caja = raiz.getBoundingClientRect();
+    fijar(opciones.dePuntero((e.clientX - caja.left) * (opciones.ancho / caja.width)));
+  });
+  raiz.addEventListener('pointerdown', function (e) {
+    const caja = raiz.getBoundingClientRect();
+    fijar(opciones.dePuntero((e.clientX - caja.left) * (opciones.ancho / caja.width)));
+  });
+  // En pantallas táctiles el globo se queda hasta que se toca fuera de la gráfica.
+  raiz.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') fijar(null); });
+  raiz.addEventListener('blur', function () { fijar(null); });
+  raiz.addEventListener('focus', function () { if (raiz.matches(':focus-visible')) fijar(opciones.ultima); });
+  raiz.addEventListener('keydown', function (e) {
+    const actual = activa === null ? opciones.ultima : activa;
+    let nueva = null;
+    if (e.key === 'ArrowLeft') nueva = opciones.vecina(actual, -1);
+    else if (e.key === 'ArrowRight') nueva = opciones.vecina(actual, 1);
+    else if (e.key === 'Home') nueva = opciones.primera;
+    else if (e.key === 'End') nueva = opciones.ultima;
+    else if (e.key === 'Escape') { fijar(null); return; }
+    else return;
+    e.preventDefault();
+    fijar(nueva);
+  });
+}
+document.addEventListener('pointerdown', function (e) {
+  for (const globo of document.querySelectorAll('.globo:not([hidden])')) {
+    if (!globo.parentNode.contains(e.target)) { globo.hidden = true; }
+  }
+});
+
+function lienzoVacio(lienzo, texto) {
+  const previo = $('.lienzo-vacio', lienzo);
+  if (previo) previo.remove();
+  if (texto) lienzo.append(crear('p', { clase: 'lienzo-vacio' }, texto));
+}
+
+function graficaColumnas(lienzo, cubos, cfg) {
+  const { ancho, alto } = medidas(lienzo);
+  const totales = cubos.map((c) => sumar(c.valores));
+  const maximo = Math.max.apply(null, totales);
+  const paso = maximo > 0 ? pasoLimpio(Math.max(maximo, 4), 4) : 1;
+  const tope = maximo > 0 ? Math.ceil(maximo / paso) * paso : 4;
+  const marcas = marcasEntre(0, tope, paso);
+  const rotular = rotuloDeEje(tope);
+  const margen = { izq: anchoDeRotulos(marcas.map(rotular)), der: 4, arr: 36, aba: 28 };
+  const w = ancho - margen.izq - margen.der, h = alto - margen.arr - margen.aba;
+  const hueco = w / cubos.length;
+  const grosor = Math.max(3, Math.min(24, Math.floor(hueco * 0.64)));
+  const py = (v) => margen.arr + h - (v / tope) * h;
+  const centro = (i) => margen.izq + (i + 0.5) * hueco;
+
+  const raiz = trazar('svg', { viewBox: '0 0 ' + ancho + ' ' + alto, role: 'img', tabindex: '0', 'aria-label': cfg.descripcion });
+  for (const v of marcas) {
+    raiz.append(
+      trazar('line', { class: v === 0 ? 'base' : 'rejilla', x1: margen.izq, x2: ancho - margen.der, y1: Math.round(py(v)) + 0.5, y2: Math.round(py(v)) + 0.5 }),
+      trazar('text', { x: margen.izq - 8, y: py(v) + 4, 'text-anchor': 'end' }, rotular(v)));
+  }
+  const franja = trazar('rect', { class: 'franja', y: margen.arr, width: hueco, height: h, visibility: 'hidden' });
+  raiz.append(franja);
+
+  cubos.forEach(function (c, i) {
+    const x0 = centro(i) - grosor / 2, x1 = x0 + grosor;
+    const conValor = CANALES.map((canal, ci) => ci).filter((ci) => c.valores[ci] > 0);
+    let abajo = py(0);
+    conValor.forEach(function (ci, k) {
+      const esCima = k === conValor.length - 1;
+      const altura = Math.max(1, (c.valores[ci] / tope) * h);
+      // Los segmentos apilados se separan con 2 px de fondo, no con un borde.
+      const arriba = abajo - altura + (esCima || altura < 4 ? 0 : 2);
+      const r = esCima ? Math.min(4, grosor / 2, abajo - arriba) : 0;
+      const d = 'M' + x0 + ',' + abajo + 'V' + (arriba + r) + 'Q' + x0 + ',' + arriba + ' ' + (x0 + r) + ',' + arriba +
+        'H' + (x1 - r) + 'Q' + x1 + ',' + arriba + ' ' + x1 + ',' + (arriba + r) + 'V' + abajo + 'Z';
+      raiz.append(trazar('path', { class: 'barra', 'data-serie': CANALES[ci].clave, d: d }));
+      abajo -= altura;
+    });
+  });
+
+  // Solo se rotula la columna más alta; las demás se leen en el eje, el globo o la tabla.
+  if (maximo > 0) {
+    const i = totales.indexOf(maximo);
+    const x = Math.min(Math.max(centro(i), margen.izq + 14), ancho - 14);
+    raiz.append(trazar('text', { class: 'valor', x: x, y: py(maximo) - 7, 'text-anchor': 'middle' }, fmt(maximo)));
+  }
+  cubos.forEach(function (c, i) {
+    if (cfg.conRotulo(c, i, w)) raiz.append(trazar('text', { x: centro(i), y: alto - 8, 'text-anchor': 'middle' }, cfg.rotulo(c)));
+  });
+
+  if (cfg.desde > cubos[0].t && cfg.desde < cubos[cubos.length - 1].fin) {
+    let i = cubos.length - 1;
+    while (i > 0 && cubos[i].t > cfg.desde) i--;
+    const x = Math.round(margen.izq + (i + (cfg.desde - cubos[i].t) / (cubos[i].fin - cubos[i].t)) * hueco) + 0.5;
+    const aLaDerecha = x < ancho * 0.6;
+    raiz.append(
+      trazar('line', { class: 'anotacion-linea', x1: x, x2: x, y1: 16, y2: py(0) }),
+      trazar('text', { class: 'anotacion', x: x + (aLaDerecha ? 6 : -6), y: 14, 'text-anchor': aLaDerecha ? 'start' : 'end' }, 'Empieza el registro'));
+  }
+
+  const globo = globoDe(lienzo);
+  globo.hidden = true;
+  interaccion(raiz, lienzo, {
+    ancho: ancho, primera: 0, ultima: cubos.length - 1,
+    dePuntero: (x) => Math.max(0, Math.min(cubos.length - 1, Math.floor((x - margen.izq) / hueco))),
+    vecina: (i, salto) => Math.max(0, Math.min(cubos.length - 1, i + salto)),
+    mover: function (i) {
+      if (i === null) { franja.setAttribute('visibility', 'hidden'); globo.hidden = true; return; }
+      franja.setAttribute('x', margen.izq + i * hueco);
+      franja.setAttribute('visibility', 'visible');
+      const lista = crear('ul');
+      CANALES.forEach(function (canal, ci) { lista.append(filaDeGlobo(canal.clave, fmt(cubos[i].valores[ci]), canal.nombre)); });
+      lista.append(filaDeGlobo('', fmt(totales[i]), 'Total'));
+      reemplazar(globo, [crear('p', { clase: 'globo-titulo' }, cfg.titulo(cubos[i])), lista]);
+      colocarGlobo(lienzo, globo, centro(i) * (lienzo.clientWidth / ancho), hueco);
+    },
+  });
+
+  const previo = $('svg', lienzo);
+  if (previo) previo.replaceWith(raiz); else lienzo.prepend(raiz);
+  lienzoVacio(lienzo, maximo > 0 ? '' : cfg.vacio);
+}
+
+function marcasDeTiempo(inicio, fin, cuantas) {
+  const pasos = [HORA / 4, HORA / 2, HORA, 2 * HORA, 3 * HORA, 6 * HORA, 12 * HORA, DIA, 2 * DIA, 5 * DIA, 7 * DIA, 14 * DIA];
+  const paso = pasos.find((p) => (fin - inicio) / p <= cuantas) || 30 * DIA;
+  const marcas = [];
+  const d = new Date(inicio);
+  if (paso < HORA) {
+    const minutos = paso / 60000;
+    d.setSeconds(0, 0);
+    d.setMinutes(Math.ceil(d.getMinutes() / minutos) * minutos);
+    for (; d.getTime() <= fin; d.setMinutes(d.getMinutes() + minutos)) marcas.push({ t: d.getTime(), texto: horaMinuto.format(d) });
+  } else if (paso < DIA) {
+    const horas = paso / HORA;
+    d.setMinutes(0, 0, 0);
+    if (d.getTime() < inicio) d.setHours(d.getHours() + 1);
+    while (d.getHours() % horas !== 0) d.setHours(d.getHours() + 1);
+    for (; d.getTime() <= fin; d.setHours(d.getHours() + horas)) marcas.push({ t: d.getTime(), texto: d.getHours() === 0 ? diaYMes.format(d) : horaSola.format(d) });
+  } else {
+    const dias = paso / DIA;
+    d.setHours(0, 0, 0, 0);
+    if (d.getTime() < inicio) d.setDate(d.getDate() + 1);
+    for (; d.getTime() <= fin; d.setDate(d.getDate() + dias)) marcas.push({ t: d.getTime(), texto: diaYMes.format(d) });
+  }
+  return marcas;
+}
+
+function graficaEscalones(lienzo, series, inicio, fin, cfg) {
+  const { ancho, alto } = medidas(lienzo);
+  const conDatos = series.filter((s) => s.puntos.length);
+  const valores = [].concat.apply([], conDatos.map((s) => s.puntos.map((p) => p.v)));
+  const raiz = trazar('svg', { viewBox: '0 0 ' + ancho + ' ' + alto, role: 'img', tabindex: '0', 'aria-label': cfg.descripcion });
+  const previo = $('svg', lienzo);
+  const globo = globoDe(lienzo);
+  globo.hidden = true;
+  if (!valores.length || fin <= inicio) {
+    if (previo) previo.replaceWith(raiz); else lienzo.prepend(raiz);
+    lienzoVacio(lienzo, cfg.vacio);
+    return;
+  }
+  let bajo = Math.max(0, Math.min.apply(null, valores) - 1), alto2 = Math.max.apply(null, valores) + 1;
+  const paso = pasoLimpio(alto2 - bajo, 4);
+  bajo = Math.floor(bajo / paso) * paso;
+  alto2 = Math.ceil(alto2 / paso) * paso;
+  const marcas = marcasEntre(bajo, alto2, paso);
+  const rotular = rotuloDeEje(alto2);
+  const margen = { izq: anchoDeRotulos(marcas.map(rotular)), der: 14 + anchoDeRotulos(conDatos.map((s) => fmt(s.puntos[s.puntos.length - 1].v))), arr: 36, aba: 28 };
+  const w = ancho - margen.izq - margen.der, h = alto - margen.arr - margen.aba;
+  const px = (t) => margen.izq + ((t - inicio) / (fin - inicio)) * w;
+  const py = (v) => margen.arr + h - ((v - bajo) / (alto2 - bajo)) * h;
+
+  for (const v of marcas) {
+    raiz.append(
+      trazar('line', { class: v === 0 ? 'base' : 'rejilla', x1: margen.izq, x2: margen.izq + w, y1: Math.round(py(v)) + 0.5, y2: Math.round(py(v)) + 0.5 }),
+      trazar('text', { x: margen.izq - 8, y: py(v) + 4, 'text-anchor': 'end' }, rotular(v)));
+  }
+  for (const marca of marcasDeTiempo(inicio, fin, Math.max(2, Math.floor(w / 72)))) {
+    if (px(marca.t) < margen.izq + 12 || px(marca.t) > margen.izq + w - 12) continue;
+    raiz.append(trazar('text', { x: px(marca.t), y: alto - 8, 'text-anchor': 'middle' }, marca.texto));
+  }
+
+  const mira = trazar('line', { class: 'mira', y1: margen.arr - 6, y2: py(bajo), visibility: 'hidden' });
+  raiz.append(mira);
+  const finales = [];
+  for (const s of conDatos) {
+    const clave = CANALES[s.ci].clave;
+    let d = 'M' + px(s.puntos[0].t).toFixed(1) + ',' + py(s.puntos[0].v).toFixed(1);
+    for (let k = 1; k < s.puntos.length; k++) d += 'H' + px(s.puntos[k].t).toFixed(1) + 'V' + py(s.puntos[k].v).toFixed(1);
+    d += 'H' + px(fin).toFixed(1);
+    const ultimo = s.puntos[s.puntos.length - 1].v;
+    raiz.append(trazar('path', { class: 'trazo', 'data-serie': clave, d: d }));
+    finales.push({ s: s, clave: clave, v: ultimo, y: py(ultimo), yTexto: py(ultimo) });
+  }
+  // Rótulos de final de línea: si dos quedan a menos de 14 px, se apartan lo justo.
+  finales.sort((a, b) => a.y - b.y);
+  for (let k = 1; k < finales.length; k++) {
+    const falta = 14 - (finales[k].yTexto - finales[k - 1].yTexto);
+    if (falta > 0 && finales[k].v !== finales[k - 1].v) { finales[k - 1].yTexto -= falta / 2; finales[k].yTexto += falta / 2; }
+  }
+  const marcadores = {};
+  for (const f of finales) {
+    raiz.append(trazar('circle', { class: 'punto', 'data-serie': f.clave, cx: px(fin), cy: f.y, r: 5 }));
+    raiz.append(trazar('text', { class: 'valor', x: px(fin) + 11, y: f.yTexto + 4.5 }, fmt(f.v)));
+    marcadores[f.s.ci] = trazar('circle', { class: 'punto', 'data-serie': f.clave, r: 5, visibility: 'hidden' });
+    raiz.append(marcadores[f.s.ci]);
+  }
+  const valorEn = function (s, t) {
+    let v = null;
+    for (const p of s.puntos) { if (p.t <= t) v = p.v; else break; }
+    return v;
+  };
+  const salto = (fin - inicio) / 48;
+  interaccion(raiz, lienzo, {
+    ancho: ancho, primera: inicio, ultima: fin,
+    dePuntero: (x) => Math.max(inicio, Math.min(fin, inicio + ((x - margen.izq) / w) * (fin - inicio))),
+    vecina: (t, direccion) => Math.max(inicio, Math.min(fin, t + direccion * salto)),
+    mover: function (t) {
+      if (t === null) {
+        mira.setAttribute('visibility', 'hidden');
+        for (const ci in marcadores) marcadores[ci].setAttribute('visibility', 'hidden');
+        globo.hidden = true;
+        return;
+      }
+      const x = Math.round(px(t)) + 0.5;
+      mira.setAttribute('x1', x);
+      mira.setAttribute('x2', x);
+      mira.setAttribute('visibility', 'visible');
+      const lista = crear('ul');
+      for (const s of series) {
+        const v = valorEn(s, t);
+        lista.append(filaDeGlobo(CANALES[s.ci].clave, v === null ? '–' : fmt(v), CANALES[s.ci].nombre));
+        if (!marcadores[s.ci]) continue;
+        if (v === null) { marcadores[s.ci].setAttribute('visibility', 'hidden'); continue; }
+        marcadores[s.ci].setAttribute('cx', x);
+        marcadores[s.ci].setAttribute('cy', py(v));
+        marcadores[s.ci].setAttribute('visibility', 'visible');
+      }
+      reemplazar(globo, [crear('p', { clase: 'globo-titulo' }, fechaConHora.format(t)), lista]);
+      colocarGlobo(lienzo, globo, x * (lienzo.clientWidth / ancho), 0);
+    },
+  });
+  if (previo) previo.replaceWith(raiz); else lienzo.prepend(raiz);
+  lienzoVacio(lienzo, '');
+}
+
+function itemDeLeyenda(c, claseDeClave, valor, extra) {
+  return crear('li', { datos: { serie: c.clave } },
+    crear('span', { clase: 'clave ' + claseDeClave }),
+    c.logo ? crear('img', { src: c.logo, alt: '', width: 20, height: 20, loading: 'lazy' }) : null,
+    enlaceExterno(c.url, c.nombre), ' ', crear('strong', null, valor),
+    extra ? crear('span', { clase: 'tenue' }, extra) : null);
+}
+
+function tablaDeDatos(cabeceras, filas) {
+  return crear('table', null,
+    crear('thead', null, crear('tr', null, cabeceras.map((c, i) => crear('th', { scope: 'col', clase: i > 0 && c.num ? 'num' : '' }, c.texto)))),
+    crear('tbody', null, filas.map((f) => crear('tr', null, f.map((celda, i) =>
+      i === 0 ? crear('th', { scope: 'row' }, celda) : crear('td', { clase: cabeceras[i].num ? 'num' : '' }, celda))))));
+}
+
+function pintarTablero(m) {
+  const clave = estado.periodo, periodo = PERIODOS[clave];
+  const cubos = cubosDeVistas(m, clave);
+  const inicio = cubos[0].t;
+  const porHoras = clave === '24h';
+  const desde = porHoras ? m.bitacoraDesde : (isFinite(m.registroDesde) ? m.registroDesde : 0);
+
+  $('#periodo-nota').textContent = desde > inicio
+    ? conPunto((porHoras ? 'Las vistas por hora se registran desde el ' : 'El registro empezó el ') + fechaNumerica.format(desde) + ' a ' + laHora(desde))
+    : '';
+
+  // Vistas ganadas
+  const totalPorCanal = CANALES.map((c, ci) => sumar(cubos.map((cubo) => cubo.valores[ci])));
+  const total = sumar(totalPorCanal);
+  $('#vistas-nota').textContent = cuantos(total, 'vista', 'vistas') + ' en ' + periodo.nombre + ', por ' + periodo.unidad + '.';
+  reemplazar($('#vistas-leyenda'), m.canales.map((c) => itemDeLeyenda(c, '', fmt(totalPorCanal[c.ci]))));
+  const rotuloLargo = function (c) {
+    if (!porHoras) return diaCompleto.format(c.t);
+    return diaYMes.format(c.t) + ', de ' + horaSola.format(c.t) + ' a ' + horaSola.format(c.fin);
+  };
+  graficaColumnas($('#vistas-lienzo'), cubos, {
+    descripcion: 'Vistas ganadas por ' + periodo.unidad + ' y canal en ' + periodo.nombre + '. Con las flechas se recorre cada ' + periodo.unidad + '; la tabla tiene las mismas cifras.',
+    desde: desde,
+    vacio: 'Sin vistas registradas en este período.',
+    titulo: rotuloLargo,
+    rotulo: (c) => (porHoras ? horaSola.format(c.t) : clave === '7d' ? diaDeSemana.format(c.t).replace(',', '') : diaYMes.format(c.t)),
+    conRotulo: function (c, i, w) {
+      if (porHoras) return new Date(c.t).getHours() % (w < 420 ? 6 : 3) === 0;
+      if (clave === '7d') return w >= 340 || (cubos.length - 1 - i) % 2 === 0;
+      return (cubos.length - 1 - i) % (w < 420 ? 7 : 5) === 0;
+    },
+  });
+  reemplazar($('#vistas-tabla'), [tablaDeDatos(
+    [{ texto: porHoras ? 'Hora' : 'Día' }].concat(CANALES.map((c) => ({ texto: c.nombre, num: true })), [{ texto: 'Total', num: true }]),
+    cubos.slice().reverse().map((c) => [rotuloLargo(c)].concat(c.valores.map(fmt), [fmt(sumar(c.valores))])))]);
+
+  // Suscriptores
+  const series = seriesDeSubs(m, inicio);
+  const primeros = series.filter((s) => s.puntos.length).map((s) => s.puntos[0].t);
+  const inicioSubs = primeros.length ? Math.max(inicio, Math.min.apply(null, primeros)) : inicio;
+  $('#subs-nota').textContent = 'Cada escalón es un cambio publicado por YouTube.';
+  reemplazar($('#subs-leyenda'), m.canales.map(function (c) {
+    const s = series[c.ci];
+    const cambio = s.puntos.length ? c.subs - s.puntos[0].v : 0;
+    return itemDeLeyenda(c, 'clave-linea', fmt(c.subs), cambio ? ' (' + (cambio > 0 ? '+' : '−') + fmt(Math.abs(cambio)) + ')' : '');
+  }));
+  graficaEscalones($('#subs-lienzo'), series, inicioSubs, m.ahora, {
+    descripcion: 'Suscriptores de cada canal en ' + periodo.nombre + '. Con las flechas se recorre el tiempo; la tabla tiene las mismas cifras.',
+    vacio: 'Sin lecturas de suscriptores en este período.',
+  });
+  const filas = [];
+  for (const s of series) for (const p of s.puntos) filas.push({ t: p.t, ci: s.ci, v: p.v });
+  filas.sort((a, b) => b.t - a.t || a.ci - b.ci);
+  reemplazar($('#subs-tabla'), [tablaDeDatos(
+    [{ texto: 'Fecha y hora' }, { texto: 'Canal' }, { texto: 'Suscriptores', num: true }],
+    filas.map((f) => [fechaConHora.format(f.t), CANALES[f.ci].nombre, fmt(f.v)]))]);
+
+  $('#col-periodo').textContent = 'En ' + periodo.nombre;
+  return inicio;
+}
+
+/* ---------- Tabla de videos ---------- */
+
+const COMPARAR = {
+  titulo: (a, b) => a.titulo.localeCompare(b.titulo, 'es'),
+  canal: (a, b) => a.ci - b.ci,
+  publicado: (a, b) => a.publicado - b.publicado,
+  vistas: (a, b) => a.vistas - b.vistas,
+  periodo: (a, b) => (a.ganado === null ? -1 : a.ganado) - (b.ganado === null ? -1 : b.ganado),
+  likes: (a, b) => a.likes - b.likes,
+  coms: (a, b) => a.coms - b.coms,
+};
+
+function publicadoHace(m, v) {
+  const edad = m.ahora - v.publicado;
+  return edad < 7 * DIA ? 'hace ' + lapso(edad) : fechaNumerica.format(v.publicado);
+}
+
+function pintarVideos(m, inicio) {
+  const periodo = PERIODOS[estado.periodo];
+  const lista = m.videos
+    .filter((v) => estado.canal === '' || v.ci === Number(estado.canal))
+    .filter((v) => estado.tipo === '' || (estado.tipo === 'short') === v.corto);
+  for (const v of lista) v.ganado = ganado(m, v, estado.periodo, inicio);
+  const comparar = COMPARAR[estado.orden.campo];
+  lista.sort((a, b) => estado.orden.sentido * comparar(a, b) || b.publicado - a.publicado);
+
+  const cuerpo = $('#videos-cuerpo');
+  const foco = document.activeElement && cuerpo.contains(document.activeElement) ? document.activeElement.dataset.foco : '';
+  const dueno = esDueno();
+  reemplazar(cuerpo, lista.map(function (v) {
+    const c = m.canales[v.ci];
+    const estudio = 'https://studio.youtube.com/video/' + v.id + '/';
+    const dato = [(v.corto ? 'Short de ' : 'Video de ') + duracion(v.seg),
+      crear('span', { clase: 'solo-movil' }, ', ', enlaceExterno(c.url, c.nombre), ', ' + publicadoHace(m, v))];
+    if (dueno) dato.push('. ', enlaceExterno(estudio + 'edit', 'Editar en Studio', { datos: { foco: 'e' + v.id } }));
+    const sube = v.ganado === null ? '–' : (v.ganado > 0 ? '+' : '') + fmt(v.ganado);
+    return crear('tr', null,
+      crear('td', { clase: 'celda-video' }, crear('div', { clase: 'video' },
+        miniatura(v, 'mini', 'mqdefault'),
+        crear('div', { clase: 'video-texto' },
+          enlaceExterno(v.url, v.titulo, { clase: 'video-titulo', datos: { foco: 't' + v.id } }),
+          crear('span', { clase: 'video-dato' }, dato)))),
+      crear('td', { clase: 'solo-ancho' }, enlaceExterno(c.url, [c.logo ? crear('img', { src: c.logo, alt: '', width: 24, height: 24, loading: 'lazy' }) : null, c.nombre], { clase: 'celda-canal', datos: { foco: 'c' + v.id } })),
+      crear('td', { clase: 'solo-ancho' }, crear('time', { datetime: new Date(v.publicado).toISOString(), title: fechaConHora.format(v.publicado) }, publicadoHace(m, v))),
+      crear('td', { clase: 'num', datos: { etiqueta: 'vistas' } }, dueno ? enlaceExterno(estudio + 'analytics/tab-overview/period-default', fmt(v.vistas), { datos: { foco: 'v' + v.id } }) : fmt(v.vistas)),
+      crear('td', { clase: 'num ' + (v.ganado ? 'sube' : 'nada'), datos: { etiqueta: 'en ' + periodo.nombre } }, sube),
+      crear('td', { clase: 'num', datos: { etiqueta: 'me gusta' } }, dueno ? enlaceExterno(estudio + 'analytics/tab-engagement/period-default', fmt(v.likes), { datos: { foco: 'l' + v.id } }) : fmt(v.likes)),
+      crear('td', { clase: 'num', datos: { etiqueta: v.coms === 1 ? 'comentario' : 'comentarios' } }, dueno ? enlaceExterno(estudio + 'comments', fmt(v.coms), { datos: { foco: 'm' + v.id } }) : fmt(v.coms)));
+  }));
+  if (foco) {
+    const mismo = cuerpo.querySelector('[data-foco="' + foco + '"]');
+    if (mismo) mismo.focus({ preventScroll: true });
+  }
+
+  $('#videos-vacio').hidden = lista.length > 0;
+  $('#tabla-videos').hidden = lista.length === 0;
+  const recortado = m.canales.some((c) => c.total > m.videos.filter((v) => v.ci === c.ci).length);
+  $('#videos-nota').textContent = cuantos(lista.length, 'video', 'videos') + (recortado ? ', de los 15 más recientes de cada canal.' : '.');
+
+  for (const th of document.querySelectorAll('#tabla-videos th')) {
+    if (th.dataset.campo === estado.orden.campo) th.setAttribute('aria-sort', estado.orden.sentido > 0 ? 'ascending' : 'descending');
+    else th.removeAttribute('aria-sort');
+  }
+  const selector = $('#orden-movil');
+  selector.value = [].some.call(selector.options, (o) => o.value === estado.orden.campo) ? estado.orden.campo : 'publicado';
+}
+
+/* ---------- Pintado general ---------- */
+
+function pintarDatos() {
+  const m = estado.modelo;
+  if (!m) return;
+  const inicio = pintarTablero(m);
+  pintarVideos(m, inicio);
+}
+function pintar() {
+  const m = estado.modelo;
+  if (!m) return;
+  pintarParte(m);
+  pintarCanales(m);
+  pintarDatos();
+}
+
+/* ---------- Lectura ---------- */
+
+async function pedir() {
+  const control = new AbortController();
+  const tope = setTimeout(() => control.abort(), ESPERA_MS);
+  try {
+    // Sin cabeceras propias: Apps Script no responde a la consulta previa de CORS.
+    const respuesta = await fetch(FUENTE, { signal: control.signal, cache: 'no-store', credentials: 'omit' });
+    if (!respuesta.ok) throw new Error('el servidor respondió con el código ' + respuesta.status);
+    let datos;
+    try { datos = await respuesta.json(); } catch (error) { throw new Error('el servidor devolvió una respuesta que no se pudo interpretar'); }
+    if (!datos || !Array.isArray(datos.canales) || !Array.isArray(datos.videos)) throw new Error('la respuesta llegó sin los canales');
+    return datos;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('el servidor tardó más de ' + ESPERA_MS / 1000 + ' segundos');
+    if (error instanceof TypeError) throw new Error(navigator.onLine === false ? 'este dispositivo no tiene conexión' : 'no hubo conexión con el servidor');
+    throw error;
+  } finally {
+    clearTimeout(tope);
+  }
+}
+
+function avanzarPulso(ms) {
+  const barra = $('#pulso');
+  if (estado.pulso) estado.pulso.cancel();
+  if (sinMovimiento.matches || !barra.animate) return;
+  estado.pulso = barra.animate(
+    [{ transform: 'scaleX(' + (1 - ms / CADA_MS) + ')' }, { transform: 'scaleX(1)' }],
+    { duration: ms, easing: 'linear', fill: 'forwards' });
+}
+
+function programar(ms) {
+  clearTimeout(estado.reloj);
+  if (document.hidden) return;
+  estado.reloj = setTimeout(leer, ms);
+  avanzarPulso(ms);
+}
+
+async function leer() {
+  clearTimeout(estado.reloj);
+  estado.ultimoIntento = Date.now();
+  const marca = $('#estado');
+  try {
+    const datos = await pedir();
+    estado.modelo = preparar(datos);
+    guardar('datos', JSON.stringify(datos));
+    pintar();
+    marca.textContent = 'Leído a ' + laHora(estado.modelo.ahora);
+    marca.classList.remove('falla');
+    $('#aviso').hidden = true;
+  } catch (error) {
+    const previa = estado.modelo ? ' ' + conPunto('Se muestra la lectura de ' + laHora(estado.modelo.ahora)) : '';
+    marca.textContent = estado.modelo ? 'Sin lectura desde ' + laHora(estado.modelo.ahora) : 'Sin lectura';
+    marca.classList.add('falla');
+    $('#aviso-texto').textContent = 'No se leyeron las cifras: ' + error.message + '.' + previa + ' Se intenta de nuevo cada minuto.';
+    $('#aviso').hidden = false;
+  }
+  programar(CADA_MS);
+}
+
+/* ---------- Controles ---------- */
+
+function temaActual() {
+  return document.documentElement.dataset.tema || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'oscuro' : 'claro');
+}
+function rotularTema() {
+  $('#tema-texto').textContent = temaActual() === 'oscuro' ? 'Usar tema claro' : 'Usar tema oscuro';
+}
+
+function marcar(nombre, valor) {
+  const radio = document.querySelector('input[name="' + nombre + '"][value="' + valor + '"]');
+  if (radio) radio.checked = true;
+}
+
+function conectarControles() {
+  const guardado = recordar('periodo');
+  if (PERIODOS[guardado]) { estado.periodo = guardado; marcar('periodo', guardado); }
+
+  $('#periodo').addEventListener('change', function (e) {
+    estado.periodo = e.target.value;
+    guardar('periodo', estado.periodo);
+    pintarDatos();
+  });
+  $('#filtro-canal').addEventListener('change', function (e) { estado.canal = e.target.value; pintarDatos(); });
+  $('#filtro-tipo').addEventListener('change', function (e) { estado.tipo = e.target.value; pintarDatos(); });
+  $('#quitar-filtros').addEventListener('click', function () {
+    estado.canal = ''; estado.tipo = '';
+    marcar('canal', ''); marcar('tipo', '');
+    pintarDatos();
+  });
+  // La cifra «videos» de cada canal lleva a la tabla ya filtrada por ese canal.
+  for (const a of document.querySelectorAll('[data-filtro]')) {
+    a.addEventListener('click', function () {
+      estado.canal = a.dataset.filtro; estado.tipo = '';
+      marcar('canal', estado.canal); marcar('tipo', '');
+      pintarDatos();
+    });
+  }
+  $('#tabla-videos thead').addEventListener('click', function (e) {
+    const th = e.target.closest('th[data-campo]');
+    if (!th) return;
+    const campo = th.dataset.campo;
+    if (estado.orden.campo === campo) estado.orden.sentido *= -1;
+    else estado.orden = { campo: campo, sentido: campo === 'titulo' || campo === 'canal' ? 1 : -1 };
+    pintarDatos();
+  });
+  $('#orden-movil').addEventListener('change', function (e) {
+    estado.orden = { campo: e.target.value, sentido: -1 };
+    pintarDatos();
+  });
+
+  for (const nombre of ['vistas', 'subs']) {
+    const boton = $('#' + nombre + '-tabla-boton');
+    boton.addEventListener('click', function () {
+      const enTabla = boton.getAttribute('aria-pressed') !== 'true';
+      boton.setAttribute('aria-pressed', String(enTabla));
+      boton.textContent = enTabla ? 'Ver como gráfica' : 'Ver como tabla';
+      $('#' + nombre + '-tabla').hidden = !enTabla;
+      $('#' + nombre + '-lienzo').hidden = enTabla;
+      if (!enTabla) pintarDatos();
+    });
+  }
+
+  $('#tema').addEventListener('click', function () {
+    const nuevo = temaActual() === 'oscuro' ? 'claro' : 'oscuro';
+    document.documentElement.dataset.tema = nuevo;
+    guardar('tema', nuevo);
+    rotularTema();
+  });
+  rotularTema();
+
+  $('#salir-dueno').addEventListener('click', function () {
+    guardar('dueno', null);
+    document.documentElement.removeAttribute('data-dueno');
+    if (estado.modelo) { for (const caja of document.querySelectorAll('[data-campo="ultimo"]')) caja.dataset.video = ''; pintar(); }
+  });
+  $('#aviso-boton').addEventListener('click', leer);
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      clearTimeout(estado.reloj);
+      if (estado.pulso) estado.pulso.pause();
+      return;
+    }
+    const falta = CADA_MS - (Date.now() - estado.ultimoIntento);
+    if (falta <= 0) leer(); else programar(falta);
+  });
+
+  // Las gráficas se dibujan a la medida del contenedor: al cambiar el ancho se rehacen.
+  if ('ResizeObserver' in window) {
+    let ancho = 0, pendiente = 0;
+    new ResizeObserver(function (entradas) {
+      const nuevo = Math.round(entradas[0].contentRect.width);
+      if (nuevo === ancho) return;
+      ancho = nuevo;
+      cancelAnimationFrame(pendiente);
+      pendiente = requestAnimationFrame(pintarDatos);
+    }).observe($('.tablero'));
+  }
+}
+
+function iniciar() {
+  conectarControles();
+  const guardado = recordar('datos');
+  if (guardado) {
+    try {
+      estado.modelo = preparar(JSON.parse(guardado));
+      pintar();
+      $('#estado').textContent = 'Lectura guardada de ' + laHora(estado.modelo.ahora);
+    } catch (error) {
+      guardar('datos', null);
+    }
+  }
+  leer();
+}
+
+iniciar();
