@@ -26,8 +26,8 @@
 <link rel="preload" href="fuentes/ysabeau-office-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preconnect" href="https://script.google.com">
 <link rel="preconnect" href="https://i.ytimg.com">
-<link rel="stylesheet" href="estilo.css?v=3">
-<script src="tema.js?v=2"></script>
+<link rel="stylesheet" href="estilo.css?v=4">
+<script src="tema.js?v=4"></script>
 </head>
 <body>
 <a class="salto" href="#contenido">Ir al contenido</a>
@@ -49,7 +49,7 @@
     <a href="#suscriptores">Suscriptores</a>
     <a href="#videos">Videos</a>
   </nav>
-  <p class="estado" id="estado">Cargando cifras…</p>
+  <p class="estado"><span id="estado">Cargando cifras…</span> <span class="estado-nota">Se lee de nuevo cada minuto.</span></p>
   <button class="boton-tema" id="tema" type="button">
     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="7.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path fill="currentColor" d="M10 2.75a7.25 7.25 0 0 1 0 14.5z"/></svg>
     <span class="oculto" id="tema-texto">Usar tema oscuro</span>
@@ -83,6 +83,7 @@
         <div><dt>vistas</dt><dd><a href="#vistas" data-campo="vistas">–</a></dd></div>
         <div><dt>videos</dt><dd><a href="#videos" data-campo="videos" data-filtro="0">–</a></dd></div>
       </dl>
+      <p class="canal-mov" data-campo="movimiento"></p>
       <div class="canal-ultimo" data-campo="ultimo"></div>
       <p class="canal-enlaces">
         <a data-campo="canal" href="https://www.youtube.com/@pesoduro" target="_blank" rel="noopener noreferrer">Abrir el canal en YouTube</a>
@@ -105,6 +106,7 @@
         <div><dt>vistas</dt><dd><a href="#vistas" data-campo="vistas">–</a></dd></div>
         <div><dt>videos</dt><dd><a href="#videos" data-campo="videos" data-filtro="1">–</a></dd></div>
       </dl>
+      <p class="canal-mov" data-campo="movimiento"></p>
       <div class="canal-ultimo" data-campo="ultimo"></div>
       <p class="canal-enlaces">
         <a data-campo="canal" href="https://www.youtube.com/@estovienedelejos" target="_blank" rel="noopener noreferrer">Abrir el canal en YouTube</a>
@@ -127,6 +129,7 @@
         <div><dt>vistas</dt><dd><a href="#vistas" data-campo="vistas">–</a></dd></div>
         <div><dt>videos</dt><dd><a href="#videos" data-campo="videos" data-filtro="2">–</a></dd></div>
       </dl>
+      <p class="canal-mov" data-campo="movimiento"></p>
       <div class="canal-ultimo" data-campo="ultimo"></div>
       <p class="canal-enlaces">
         <a data-campo="canal" href="https://www.youtube.com/@psiqueajena" target="_blank" rel="noopener noreferrer">Abrir el canal en YouTube</a>
@@ -136,7 +139,8 @@
     </article>
   </section>
 
-  <div class="tablero">
+  <div class="datos" id="datos" hidden>
+  <div class="periodo-barra">
     <fieldset class="periodo" id="periodo">
       <legend>Período</legend>
       <div class="segmentos">
@@ -144,14 +148,17 @@
         <label><input type="radio" name="periodo" value="7d"><span>7 días</span></label>
         <label><input type="radio" name="periodo" value="30d"><span>30 días</span></label>
       </div>
-      <p class="periodo-nota" id="periodo-nota"></p>
     </fieldset>
+  </div>
+
+  <div class="tablero">
+    <p class="periodo-nota" id="periodo-nota"></p>
 
     <div class="graficas">
       <section class="grafica" id="vistas" aria-labelledby="vistas-titulo">
         <div class="grafica-cab">
           <h2 id="vistas-titulo">Vistas ganadas</h2>
-          <button class="boton-texto" id="vistas-tabla-boton" type="button" aria-pressed="false">Ver como tabla</button>
+          <button class="boton-texto" id="vistas-tabla-boton" type="button">Ver como tabla</button>
         </div>
         <p class="grafica-nota" id="vistas-nota"></p>
         <ul class="leyenda" id="vistas-leyenda"></ul>
@@ -162,7 +169,7 @@
       <section class="grafica" id="suscriptores" aria-labelledby="subs-titulo">
         <div class="grafica-cab">
           <h2 id="subs-titulo">Suscriptores</h2>
-          <button class="boton-texto" id="subs-tabla-boton" type="button" aria-pressed="false">Ver como tabla</button>
+          <button class="boton-texto" id="subs-tabla-boton" type="button">Ver como tabla</button>
         </div>
         <p class="grafica-nota" id="subs-nota"></p>
         <ul class="leyenda" id="subs-leyenda"></ul>
@@ -198,9 +205,9 @@
         </fieldset>
         <label class="orden-movil">Ordenar por
           <select id="orden-movil">
+            <option value="periodo" id="orden-periodo">Más vistas en 24 horas</option>
             <option value="publicado">Más recientes</option>
             <option value="vistas">Más vistas</option>
-            <option value="periodo">Más vistas ganadas en el período</option>
             <option value="likes">Más «me gusta»</option>
             <option value="coms">Más comentarios</option>
           </select>
@@ -212,10 +219,10 @@
         <thead>
           <tr>
             <th scope="col" data-campo="titulo"><button class="orden" type="button">Video</button></th>
-            <th scope="col" data-campo="canal"><button class="orden" type="button">Canal</button></th>
-            <th scope="col" data-campo="publicado" aria-sort="descending"><button class="orden" type="button">Publicado</button></th>
+            <th scope="col" class="solo-ancho" data-campo="canal"><button class="orden" type="button">Canal</button></th>
+            <th scope="col" class="solo-ancho" data-campo="publicado"><button class="orden" type="button">Publicado</button></th>
             <th scope="col" class="num" data-campo="vistas"><button class="orden" type="button">Vistas</button></th>
-            <th scope="col" class="num" data-campo="periodo"><button class="orden" type="button" id="col-periodo">24 horas</button></th>
+            <th scope="col" class="num" data-campo="periodo" aria-sort="descending"><button class="orden" type="button" id="col-periodo">En 24 horas</button></th>
             <th scope="col" class="num" data-campo="likes"><button class="orden" type="button">Me gusta</button></th>
             <th scope="col" class="num" data-campo="coms"><button class="orden" type="button">Comentarios</button></th>
           </tr>
@@ -224,13 +231,15 @@
       </table>
     </div>
     <p class="vacio" id="videos-vacio" hidden><span id="videos-vacio-texto">Sin videos con ese filtro.</span> <button class="boton-texto" id="quitar-filtros" type="button">Quitar los filtros</button></p>
+    <p class="volver"><a href="#contenido">Volver arriba</a></p>
   </section>
+  </div>
 </main>
 
 <footer class="pie">
   <section>
     <h2>Cómo se lee</h2>
-    <p>Atalaya muestra cifras públicas de tres canales de YouTube. Con esta página abierta se leen cada minuto; cada cinco minutos, una bitácora anota lo que cambió. YouTube actualiza sus contadores con retraso, así que una cifra puede tardar minutos u horas en moverse. Se conservan como máximo 30 días.</p>
+    <p>Atalaya muestra cifras públicas de tres canales de YouTube. Con esta página abierta se leen cada minuto; cada cinco minutos se registra lo que cambió. YouTube actualiza sus contadores con retraso, así que una cifra puede tardar minutos u horas en moverse. Se conservan como máximo 30 días.</p>
   </section>
   <section>
     <h2>Privacidad</h2>
@@ -243,11 +252,15 @@
       <li><a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener noreferrer">Condiciones del Servicio de YouTube</a></li>
       <li><a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Política de Privacidad de Google</a></li>
     </ul>
-    <p class="solo-dueno">Modo dueño activo: las cifras de cada video abren YouTube Studio. <button class="boton-texto" id="salir-dueno" type="button">Desactivar el modo dueño</button></p>
+  </section>
+  <section>
+    <h2>Modo dueño</h2>
+    <p>Convierte las cifras de cada video en enlaces a YouTube Studio. Solo sirve a quien administra los canales.</p>
+    <p><button class="boton-texto" id="dueno-boton" type="button">Activar el modo dueño</button></p>
   </section>
 </footer>
 
 <noscript><p class="sin-js">Este sitio necesita JavaScript para leer las cifras de YouTube.</p></noscript>
-<script src="atalaya.js?v=2" defer></script>
+<script src="atalaya.js?v=4" defer></script>
 </body>
 </html>

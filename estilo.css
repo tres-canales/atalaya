@@ -117,7 +117,8 @@ img { max-width: 100%; }
 .secciones a { font-weight: 500; text-decoration: none; padding: 0.3rem 0; }
 .secciones a:hover { text-decoration: underline; text-decoration-thickness: 2px; }
 .estado { margin: 0; color: var(--tinta-2); font-size: 0.9375rem; font-variant-numeric: tabular-nums; }
-.estado.falla { color: var(--tinta); font-weight: 500; }
+.estado .falla { color: var(--tinta); font-weight: 500; }
+.estado-nota { display: none; }
 .boton-tema {
   display: inline-grid; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0;
   background: none; border: 1px solid var(--linea-2); border-radius: 50%; cursor: pointer;
@@ -137,7 +138,7 @@ img { max-width: 100%; }
 }
 .boton:hover { background: var(--fondo); color: var(--tinta); }
 .boton-texto {
-  padding: 0; background: none; border: 0; cursor: pointer; color: var(--tinta-2);
+  padding: 0.35rem 0; background: none; border: 0; cursor: pointer; color: var(--tinta-2);
   text-decoration: underline; text-underline-offset: 0.18em; text-decoration-thickness: 1px;
 }
 .boton-texto:hover { color: var(--tinta); text-decoration-thickness: 2px; }
@@ -162,14 +163,17 @@ img { max-width: 100%; }
 .parte a[data-serie] { text-decoration-thickness: 0.14em; text-decoration-color: var(--serie); }
 
 /* Tríptico: cada canal con sus colores y sus letras, sea cual sea el tema. */
-.triptico { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(5, auto); }
+.triptico { --pad: clamp(1.25rem, 2.6vw, 2.75rem); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(6, auto); }
 .canal {
-  display: grid; grid-row: span 5; grid-template-rows: subgrid; row-gap: clamp(1.25rem, 2vw, 1.75rem);
-  padding: clamp(1.75rem, 3.4vw, 3.25rem) clamp(1.25rem, 2.6vw, 2.75rem) clamp(1.75rem, 3vw, 2.75rem);
+  display: grid; grid-row: span 6; grid-template-rows: subgrid; row-gap: clamp(1.1rem, 1.8vw, 1.6rem);
+  padding: clamp(1.75rem, 3.4vw, 3.25rem) var(--pad) clamp(1.75rem, 3vw, 2.75rem);
   background: var(--c-fondo); color: var(--c-texto);
 }
+/* Los bloques de los lados llevan el margen de la página; el del centro reparte
+   la misma suma para que el contenido de los tres mida igual. */
 .canal:first-child { padding-left: var(--margen); }
 .canal:last-child { padding-right: var(--margen); }
+.canal:nth-child(2) { padding-inline: calc((var(--margen) + var(--pad)) / 2); }
 .canal-pd { --c-fondo: #0f3d2e; --c-texto: #f6f1e4; --c-tenue: #b9c7b9; --c-acento: #ffc93c; }
 .canal-evl { --c-fondo: #0b2a4a; --c-texto: #f4f1ea; --c-tenue: #9fb3c8; --c-acento: #ff7a00; }
 .canal-pa { --c-fondo: #f2eee6; --c-texto: #111111; --c-tenue: #5d574d; --c-acento: #b23a2b; }
@@ -189,11 +193,11 @@ img { max-width: 100%; }
 .canal-usuario { margin: 0.4rem 0 0; font-size: 0.9375rem; line-height: 1.2; color: var(--c-tenue); }
 .canal-desc { margin: 0; max-width: 34ch; font-size: 1.0625rem; line-height: 1.4; color: var(--c-tenue); }
 
-/* Las tres cifras caben siempre en un renglón: el cuerpo sale del ancho del
-   bloque y del número de caracteres (--n, que pone el programa). --letra es el
-   ancho medio de un dígito en la fuente de cada canal. */
-.canal { container-type: inline-size; }
-.canal-cifras { --hueco: clamp(1rem, 6cqi, 2.25rem); display: flex; flex-wrap: wrap; gap: 0.75rem var(--hueco); margin: 0; }
+/* Las tres cifras caben siempre en un renglón: el cuerpo sale del ancho de la
+   fila y del número de caracteres (--n, que pone el programa). --letra es el
+   ancho medio de un dígito en la fuente de cada canal. El contenedor es la fila
+   y no el bloque: la contención de tamaño en el bloque anula el subgrid. */
+.canal-cifras { --hueco: clamp(1rem, 2vw, 2.25rem); container-type: inline-size; display: flex; flex-wrap: wrap; gap: 0.75rem var(--hueco); margin: 0; }
 .canal-cifras div { display: flex; flex-direction: column-reverse; }
 .canal-cifras dt { font-size: 0.875rem; line-height: 1.3; color: var(--c-tenue); }
 .canal-cifras dd { margin: 0; line-height: 1; font-size: clamp(2.125rem, 1.35rem + 2vw, 3.375rem); }
@@ -206,6 +210,8 @@ img { max-width: 100%; }
 .canal-evl dd { --letra: 0.66; font-family: "Inter", var(--fuente); font-weight: 800; letter-spacing: -0.035em; }
 .canal-pa dd { --letra: 0.72; font-family: "Archivo Black", var(--fuente); letter-spacing: -0.02em; }
 
+.canal-mov { margin: 0; font-size: 1rem; line-height: 1.35; font-weight: 500; }
+.canal-mov:empty { display: none; }
 .canal-ultimo h3 { margin: 0 0 0.7rem; font: 500 0.9375rem/1.2 var(--fuente); color: var(--c-tenue); }
 .ultimo { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.9rem 1.1rem; }
 .ultimo-mini { flex: none; display: block; height: 9.5rem; border-radius: 4px; overflow: hidden; background: color-mix(in srgb, currentColor 14%, transparent); }
@@ -217,7 +223,8 @@ img { max-width: 100%; }
 .ultimo-titulo a:hover { text-decoration: underline; }
 .ultimo-dato { margin: 0.45rem 0 0; font-size: 0.9375rem; line-height: 1.4; color: var(--c-tenue); }
 .ultimo-dato a { color: inherit; }
-.canal-enlaces { display: flex; flex-wrap: wrap; align-self: end; gap: 0.4rem 1.4rem; margin: 0; font-size: 0.9375rem; }
+.canal-enlaces { display: flex; flex-wrap: wrap; align-self: end; gap: 0 1.4rem; margin: 0; font-size: 0.9375rem; }
+.canal-enlaces a { padding-block: 0.35rem; }
 
 /* Una cifra que acaba de cambiar se subraya un momento. */
 .cambio { animation: cambio 1.6s ease-out; }
@@ -226,8 +233,15 @@ img { max-width: 100%; }
   100% { box-shadow: inset 0 -0.08em 0 transparent; }
 }
 
-/* Tablero: período, gráficas */
-.tablero { padding: clamp(2.75rem, 6.5vw, 5.5rem) var(--margen) 0; }
+/* El período cambia las gráficas y una columna de la tabla: su barra se queda
+   arriba mientras se recorre todo lo que afecta. */
+.datos { padding-top: clamp(1.75rem, 4vw, 3.5rem); }
+.datos [id] { scroll-margin-top: 4.75rem; }
+.periodo-barra {
+  position: sticky; top: 0; z-index: 8; display: flex; align-items: center; min-height: 3.5rem;
+  padding: 0.5rem var(--margen); background: var(--fondo); border-bottom: 1px solid var(--linea);
+}
+.tablero { padding: clamp(1.5rem, 3vw, 2.5rem) var(--margen) 0; }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .periodo { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; }
 .periodo legend, .filtro legend { float: left; padding: 0; margin-right: 0.75rem; font-weight: 500; line-height: 2.125rem; }
@@ -236,15 +250,15 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .segmentos { display: inline-flex; gap: 1px; overflow: hidden; background: var(--linea-2); border: 1px solid var(--linea-2); border-radius: 4px; }
 .segmentos label { position: relative; display: block; background: var(--fondo); }
 .segmentos input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
-.segmentos span { display: block; padding: 0.3rem 0.85rem; font-size: 0.9375rem; font-weight: 500; line-height: 1.5; white-space: nowrap; text-align: center; }
+.segmentos span { display: block; padding: 0.4rem 0.85rem; font-size: 0.9375rem; font-weight: 500; line-height: 1.5; white-space: nowrap; text-align: center; }
 .segmentos input:hover + span { background: var(--superficie); }
 .segmentos input:checked + span { background: var(--tinta); color: var(--fondo); }
 .segmentos input:focus-visible + span { outline: 2px solid var(--tinta); outline-offset: -4px; }
 .segmentos input:checked:focus-visible + span { outline-color: var(--fondo); }
-.periodo-nota { flex: 1 1 20rem; margin: 0; color: var(--tinta-2); font-size: 0.9375rem; }
+.periodo-nota { margin: 0; color: var(--tinta-2); font-size: 0.9375rem; }
 .periodo-nota:empty { display: none; }
 
-.graficas { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: clamp(2.5rem, 4.5vw, 4.5rem); margin-top: clamp(1.75rem, 3vw, 2.5rem); }
+.graficas { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: clamp(2.5rem, 4.5vw, 4.5rem); margin-top: clamp(1.25rem, 2.5vw, 2rem); }
 .grafica { min-width: 0; }
 .grafica-cab { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; }
 h2 { margin: 0; font: 600 clamp(1.875rem, 1.45rem + 1.2vw, 2.5rem)/1 var(--fuente); letter-spacing: -0.01em; }
@@ -305,7 +319,9 @@ h2 { margin: 0; font: 600 clamp(1.875rem, 1.45rem + 1.2vw, 2.5rem)/1 var(--fuent
 .orden-movil select { margin-left: 0.5rem; padding: 0.3rem 0.5rem; background: var(--fondo); border: 1px solid var(--linea-2); border-radius: 4px; font-weight: 400; }
 .tabla-marco { margin-top: 1.25rem; }
 .tabla { width: 100%; border-collapse: collapse; }
-.tabla th { padding: 0 1rem 0.55rem 0; text-align: left; vertical-align: bottom; font-size: 0.9375rem; font-weight: 500; color: var(--tinta-2); border-bottom: 1px solid var(--tinta); white-space: nowrap; }
+/* El encabezado se queda bajo la barra del período. La raya va como sombra
+   porque un borde colapsado no acompaña a una celda fija. */
+.tabla th { position: sticky; top: 3.5rem; z-index: 4; padding: 0.6rem 1rem 0.55rem 0; text-align: left; vertical-align: bottom; font-size: 0.9375rem; font-weight: 500; color: var(--tinta-2); background: var(--fondo); box-shadow: inset 0 -1px 0 var(--tinta); white-space: nowrap; }
 .tabla td { padding: 0.7rem 1rem 0.7rem 0; vertical-align: middle; border-bottom: 1px solid var(--linea); }
 .tabla th:last-child, .tabla td:last-child { padding-right: 0; }
 .tabla .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -314,11 +330,13 @@ h2 { margin: 0; font: 600 clamp(1.875rem, 1.45rem + 1.2vw, 2.5rem)/1 var(--fuent
 .orden { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0; background: none; border: 0; font-weight: 500; cursor: pointer; }
 .orden:hover { color: var(--tinta); }
 .orden::after { content: ""; width: 0; height: 0; border: 0.28rem solid transparent; opacity: 0; }
+/* En las columnas de números la flecha va a la izquierda: el rótulo queda a ras con sus cifras. */
+.tabla th.num .orden { flex-direction: row-reverse; }
 th[aria-sort] .orden { color: var(--tinta); }
 th[aria-sort="descending"] .orden::after { border-top-color: currentColor; border-bottom-width: 0; opacity: 1; }
 th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; border-top-width: 0; opacity: 1; }
 .video { display: flex; align-items: center; gap: 0.9rem; min-width: 0; }
-.mini { flex: none; display: flex; width: 6.25rem; height: 3.5rem; }
+.mini { flex: none; display: flex; justify-content: center; width: 6.25rem; height: 3.5rem; }
 .mini img { display: block; height: 100%; width: auto; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 3px; background: var(--superficie); }
 .mini.short img { aspect-ratio: 9 / 16; }
 .video-texto { min-width: 0; }
@@ -326,18 +344,22 @@ th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; bor
 .video-titulo:hover { text-decoration: underline; }
 .video-dato { display: block; margin-top: 0.15rem; color: var(--tinta-2); font-size: 0.875rem; line-height: 1.35; }
 .video-dato a { color: inherit; }
+.video-ahora { display: block; margin-top: 0.15rem; font-size: 0.875rem; line-height: 1.35; font-weight: 500; font-variant-numeric: tabular-nums; }
 .solo-movil { display: none; }
 .celda-canal { display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none; white-space: nowrap; }
 .celda-canal:hover { text-decoration: underline; }
-.celda-canal img { width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--superficie); }
+.celda-canal img { width: 1.5rem; height: 1.5rem; max-width: none; border-radius: 50%; background: var(--superficie); }
 .tabla time { white-space: nowrap; }
 .sube { color: var(--tinta); }
 .nada { color: var(--tinta-3); }
 .vacio { margin: 1.5rem 0 0; color: var(--tinta-2); }
+.volver { margin: 1.75rem 0 0; font-size: 0.9375rem; }
+.volver a { display: inline-block; padding-block: 0.35rem; color: var(--tinta-2); }
+.volver a:hover { color: var(--tinta); }
 
 /* Pie */
 .pie {
-  display: grid; grid-template-columns: 1.4fr 1.2fr 1fr; gap: 1.5rem clamp(2rem, 4vw, 4rem);
+  display: grid; grid-template-columns: 1.35fr 1.2fr 1fr 1fr; gap: 1.5rem clamp(1.5rem, 3vw, 3.5rem);
   margin: 0 var(--margen); padding: 2rem 0 3.5rem; border-top: 1px solid var(--tinta);
   color: var(--tinta-2); font-size: 0.9375rem;
 }
@@ -348,15 +370,24 @@ th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; bor
 .pie a:hover { color: var(--tinta); }
 .sin-js { margin: 2rem var(--margen); padding: 1rem; border: 1px solid var(--tinta); }
 
+@media (min-width: 80rem) {
+  .estado-nota { display: inline; }
+}
+/* Con menos de 84rem no caben siete columnas: canal y fecha pasan al renglón secundario. */
+@media (max-width: 84rem) {
+  .tabla .solo-ancho { display: none; }
+  .solo-movil { display: inline; }
+}
 @media (max-width: 68rem) {
   .graficas { grid-template-columns: minmax(0, 1fr); }
+  .pie { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 60rem) {
   .triptico { display: block; }
   .canal { display: flex; flex-direction: column; padding-left: var(--margen); padding-right: var(--margen); }
   .canal-enlaces { align-self: flex-start; }
+  .canal:nth-child(2) { padding-inline: var(--margen); }
   .canal-desc { max-width: 44ch; }
-  .pie { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 52rem) {
   .cabecera { column-gap: 0.75rem; }
@@ -364,21 +395,25 @@ th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; bor
   .estado { margin-left: auto; font-size: 0.8125rem; }
   .secciones { order: 5; flex: 1 0 100%; margin-left: 0; overflow-x: auto; }
   .orden-movil { display: block; }
-  .tabla thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  /* Cada video es un bloque: título arriba y sus cuatro cifras en columnas alineadas.
+     El encabezado se quita (el orden se elige en la lista «Ordenar por»). */
+  .tabla thead { display: none; }
   .tabla, .tabla tbody { display: block; }
-  .tabla tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 1.1rem; padding: 0.95rem 0; border-bottom: 1px solid var(--linea); }
+  .tabla tr { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem 0.75rem; padding: 0.95rem 0; border-bottom: 1px solid var(--linea); }
   .tabla td { padding: 0; border: 0; }
-  .tabla td.celda-video { flex: 1 0 100%; margin-bottom: 0.45rem; }
-  .tabla td.solo-ancho { display: none; }
-  .tabla td.num { text-align: left; font-size: 0.9375rem; }
-  .tabla td.num::after { content: " " attr(data-etiqueta); color: var(--tinta-2); }
-  .solo-movil { display: inline; }
+  .tabla td.celda-video { grid-column: 1 / -1; }
+  .tabla td.num { text-align: left; font-size: 1rem; line-height: 1.25; }
+  .tabla td.num::after { content: attr(data-etiqueta); display: block; color: var(--tinta-2); font-size: 0.8125rem; white-space: normal; }
   .filtro { flex-wrap: wrap; }
   .mini { width: 4.5rem; align-items: center; justify-content: center; }
   .mini img { height: auto; max-height: 100%; width: 100%; }
   .mini.short img { height: 100%; width: auto; }
 }
 @media (max-width: 36rem) {
+  /* La barra fija ocupa un solo renglón: el rótulo «Período» queda solo para lectores de pantalla. */
+  .periodo legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .pie { grid-template-columns: minmax(0, 1fr); }
+  .secciones { gap: 1rem; }
   .filtros { width: 100%; }
   .filtro legend { float: none; display: block; line-height: 1.5; margin: 0 0 0.3rem; }
   .filtro { display: block; flex: 1 0 100%; }
@@ -395,5 +430,5 @@ th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; bor
   .cambio { animation: none; }
 }
 @media print {
-  .pulso, .boton-tema, .secciones, .boton-texto, .filtros, .periodo { display: none; }
+  .pulso, .boton-tema, .secciones, .boton-texto, .filtros, .periodo-barra, .volver { display: none; }
 }

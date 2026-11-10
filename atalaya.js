@@ -27,7 +27,7 @@ const PERIODOS = {
 const estado = {
   modelo: null,
   periodo: '24h',
-  orden: { campo: 'publicado', sentido: -1 },
+  orden: { campo: 'periodo', sentido: -1 },
   canal: '',
   tipo: '',
   ultimoIntento: 0,
@@ -88,7 +88,6 @@ function enlaceExterno(href, hijos, atributos) {
 }
 
 const numero = new Intl.NumberFormat('es-DO');
-const compacto = new Intl.NumberFormat('es-DO', { notation: 'compact', maximumFractionDigits: 1 });
 const horaMinuto = new Intl.DateTimeFormat('es-DO', { hour: 'numeric', minute: '2-digit' });
 const horaSola = new Intl.DateTimeFormat('es-DO', { hour: 'numeric' });
 const fechaNumerica = new Intl.DateTimeFormat('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -103,6 +102,21 @@ function cuantos(n, uno, varios) { return fmt(n) + ' ' + (n === 1 ? uno : varios
 function laHora(t) {
   const texto = horaMinuto.format(t);
   return (/^1:/.test(texto) ? 'la ' : 'las ') + texto;
+}
+// Una lectura guardada o fallida puede ser de otro día: entonces lleva su fecha.
+function momento(t, preposicion) {
+  const hoy = new Date(), dia = new Date(t);
+  if (hoy.toDateString() === dia.toDateString()) return preposicion + ' ' + laHora(t);
+  return (preposicion === 'de' ? 'del ' : preposicion + ' el ') + fechaNumerica.format(t) + ' a ' + laHora(t);
+}
+// Mientras el registro por hora tenga menos de un día, decir «24 horas» sería inexacto.
+function ventanaDeUnDia(m) {
+  if (!m.bitacoraDesde || m.ahora - m.bitacoraDesde >= DIA) return 'en las últimas 24 horas';
+  const ahora = new Date(m.ahora), inicio = new Date(m.bitacoraDesde);
+  if (ahora.toDateString() === inicio.toDateString()) return 'desde ' + laHora(m.bitacoraDesde);
+  const ayer = new Date(m.ahora - DIA);
+  if (ayer.toDateString() === inicio.toDateString()) return 'desde ayer a ' + laHora(m.bitacoraDesde);
+  return 'desde el ' + fechaNumerica.format(m.bitacoraDesde) + ' a ' + laHora(m.bitacoraDesde);
 }
 function lapso(ms) {
   const minutos = Math.max(1, Math.round(ms / 60000));
@@ -341,7 +355,7 @@ function pintarParte(m) {
       if (i > 0) frase.push(i === conCambio.length - 1 ? ' y ' : ', ');
       frase.push(enlaceDeCanal(c), netos[c.ci] > 0 ? ' ganó ' : ' perdió ', cuantos(Math.abs(netos[c.ci]), 'suscriptor', 'suscriptores'));
     });
-    frase.push(' en las últimas 24 horas.');
+    frase.push(' ', conPunto(ventanaDeUnDia(m)));
     frases.push(frase);
   }
 
@@ -389,10 +403,29 @@ function cifraDeVideo(v, texto, seccion) {
 }
 
 function pintarCanales(m) {
+  const cubos = cubosDeVistas(m, '24h');
+  const netos = [0, 0, 0];
+  for (const f of m.cambiosSubs) if (netos[f[1]] !== undefined) netos[f[1]] += Number(f[2]) || 0;
+  const ventana = ventanaDeUnDia(m);
   for (const c of m.canales) {
     const bloque = document.querySelector('[data-canal="' + c.id + '"]');
-    if (!bloque || c.falta) continue;
+    if (!bloque) continue;
     const campo = (nombre) => bloque.querySelectorAll('[data-campo="' + nombre + '"]');
+    if (c.falta) {
+      // Las cifras que hubiera se quedan; el aviso dice que no son de esta lectura.
+      campo('movimiento')[0].textContent = 'YouTube no devolvió este canal en la última lectura.';
+      continue;
+    }
+    const vistasDelDia = sumar(cubos.map((cubo) => cubo.valores[c.ci]));
+    const ganado = [];
+    if (vistasDelDia > 0) ganado.push(cuantos(vistasDelDia, 'vista', 'vistas'));
+    if (netos[c.ci] > 0) ganado.push(cuantos(netos[c.ci], 'suscriptor', 'suscriptores'));
+    let movimiento = '';
+    if (m.bitacoraDesde) {
+      movimiento = conPunto((ganado.length ? 'Ganó ' + ganado.join(' y ') + ' ' : 'Sin vistas nuevas ') + ventana);
+      if (netos[c.ci] < 0) movimiento += ' Perdió ' + cuantos(-netos[c.ci], 'suscriptor', 'suscriptores') + '.';
+    }
+    campo('movimiento')[0].textContent = movimiento;
     campo('canal').forEach(function (a) { a.href = c.url; });
     const logo = campo('logo')[0];
     if (c.logo && logo.getAttribute('src') !== c.logo) { logo.src = c.logo; logo.hidden = false; }
@@ -404,6 +437,8 @@ function pintarCanales(m) {
       const nodo = campo(nombre)[0];
       ponerCifra(nodo, valor);
       nodo.closest('div').querySelector('dt').textContent = valor === 1 ? uno : varios;
+      // El enlace solo muestra el número; el nombre accesible dice de qué es.
+      nodo.setAttribute('aria-label', fmt(valor) + ' ' + (valor === 1 ? uno : varios));
       // Una cifra corta ocupa al menos lo que su rótulo, que mide unos tres dígitos.
       caracteres += Math.max(fmt(valor).length, 3);
     }
@@ -412,7 +447,7 @@ function pintarCanales(m) {
     const caja = campo('ultimo')[0];
     const v = c.ultimo;
     if (!v) {
-      reemplazar(caja, [crear('p', { clase: 'ultimo-dato' }, 'Sin videos publicados.')]);
+      reemplazar(caja, [crear('p', { clase: 'ultimo-dato' }, c.total > 0 ? 'YouTube no devolvió los videos de este canal en la última lectura.' : 'Sin videos publicados.')]);
       caja.dataset.video = '';
       continue;
     }
@@ -429,7 +464,8 @@ function pintarCanales(m) {
     }
     reemplazar($('.ultimo-dato', caja), [
       (v.corto ? 'Short de ' : 'Video de ') + duracion(v.seg) + ', hace ' + lapso(m.ahora - v.publicado) + '. ',
-      cifraDeVideo(v, cuantos(v.vistas, 'vista', 'vistas'), 'analytics/tab-overview/period-default'), '.',
+      cifraDeVideo(v, cuantos(v.vistas, 'vista', 'vistas'), 'analytics/tab-overview/period-default'),
+      m.h1[v.id] > 0 ? ', ' + fmt(m.h1[v.id]) + ' en la última hora' : '', '.',
     ]);
   }
 }
@@ -449,7 +485,8 @@ function marcasEntre(desde, hasta, paso) {
 }
 function rotuloDeEje(tope) {
   // Un solo estilo por eje: completo hasta 9,999; compacto si el eje llega a 10,000.
-  return tope >= 10000 ? (v) => compacto.format(v) : fmt;
+  if (tope >= 1000000) return (v) => (v === 0 ? '0' : fmt(v / 1000000) + ' M');
+  return tope >= 10000 ? (v) => (v === 0 ? '0' : fmt(v / 1000) + ' mil') : fmt;
 }
 function anchoDeRotulos(rotulos) {
   return Math.max.apply(null, rotulos.map((r) => r.length)) * 7.4 + 12;
@@ -763,7 +800,7 @@ function pintarTablero(m) {
   // Vistas ganadas
   const totalPorCanal = CANALES.map((c, ci) => sumar(cubos.map((cubo) => cubo.valores[ci])));
   const total = sumar(totalPorCanal);
-  $('#vistas-nota').textContent = cuantos(total, 'vista', 'vistas') + ' en ' + periodo.nombre + ', por ' + periodo.unidad + '.';
+  $('#vistas-nota').textContent = total > 0 ? cuantos(total, 'vista', 'vistas') + ' en ' + periodo.nombre + ', por ' + periodo.unidad + '.' : '';
   reemplazar($('#vistas-leyenda'), m.canales.map((c) => itemDeLeyenda(c, '', fmt(totalPorCanal[c.ci]))));
   const rotuloLargo = function (c) {
     if (!porHoras) return diaCompleto.format(c.t);
@@ -791,6 +828,7 @@ function pintarTablero(m) {
   const inicioSubs = primeros.length ? Math.max(inicio, Math.min.apply(null, primeros)) : inicio;
   $('#subs-nota').textContent = 'Cada escalón es un cambio publicado por YouTube.';
   reemplazar($('#subs-leyenda'), m.canales.map(function (c) {
+    if (c.falta) return itemDeLeyenda(c, 'clave-linea', 'sin lectura', '');
     const s = series[c.ci];
     const cambio = s.puntos.length ? c.subs - s.puntos[0].v : 0;
     return itemDeLeyenda(c, 'clave-linea', fmt(c.subs), cambio ? ' (' + (cambio > 0 ? '+' : '−') + fmt(Math.abs(cambio)) + ')' : '');
@@ -846,12 +884,13 @@ function pintarVideos(m, inicio) {
       crear('span', { clase: 'solo-movil' }, ', ', enlaceExterno(c.url, c.nombre), ', ' + publicadoHace(m, v))];
     if (dueno) dato.push('. ', enlaceExterno(estudio + 'edit', 'Editar en Studio', { datos: { foco: 'e' + v.id } }));
     const sube = v.ganado === null ? '–' : (v.ganado > 0 ? '+' : '') + fmt(v.ganado);
+    const ahora = m.h1[v.id] > 0 ? crear('span', { clase: 'video-ahora' }, '+' + fmt(m.h1[v.id]) + ' en la última hora') : null;
     return crear('tr', null,
       crear('td', { clase: 'celda-video' }, crear('div', { clase: 'video' },
         miniatura(v, 'mini', 'mqdefault'),
         crear('div', { clase: 'video-texto' },
           enlaceExterno(v.url, v.titulo, { clase: 'video-titulo', datos: { foco: 't' + v.id } }),
-          crear('span', { clase: 'video-dato' }, dato)))),
+          crear('span', { clase: 'video-dato' }, dato), ahora))),
       crear('td', { clase: 'solo-ancho' }, enlaceExterno(c.url, [c.logo ? crear('img', { src: c.logo, alt: '', width: 24, height: 24, loading: 'lazy' }) : null, c.nombre], { clase: 'celda-canal', datos: { foco: 'c' + v.id } })),
       crear('td', { clase: 'solo-ancho' }, crear('time', { datetime: new Date(v.publicado).toISOString(), title: fechaConHora.format(v.publicado) }, publicadoHace(m, v))),
       crear('td', { clase: 'num', datos: { etiqueta: 'vistas' } }, dueno ? enlaceExterno(estudio + 'analytics/tab-overview/period-default', fmt(v.vistas), { datos: { foco: 'v' + v.id } }) : fmt(v.vistas)),
@@ -870,7 +909,8 @@ function pintarVideos(m, inicio) {
   $('#quitar-filtros').hidden = !conFiltro;
   $('#tabla-videos').hidden = lista.length === 0;
   const recortado = m.canales.some((c) => c.total > m.videos.filter((v) => v.ci === c.ci).length);
-  $('#videos-nota').textContent = cuantos(lista.length, 'video', 'videos') + (recortado ? ', de los 15 más recientes de cada canal.' : '.');
+  $('#videos-nota').textContent = lista.length === 0 && !conFiltro ? '' : cuantos(lista.length, 'video', 'videos') + (recortado ? ', de los 15 más recientes de cada canal.' : '.');
+  $('#orden-periodo').textContent = 'Más vistas en ' + periodo.nombre;
 
   for (const th of document.querySelectorAll('#tabla-videos th')) {
     if (th.dataset.campo === estado.orden.campo) th.setAttribute('aria-sort', estado.orden.sentido > 0 ? 'ascending' : 'descending');
@@ -891,6 +931,8 @@ function pintarDatos() {
 function pintar() {
   const m = estado.modelo;
   if (!m) return;
+  // Antes de dibujar: una gráfica en un contenedor oculto mide 0 de ancho.
+  $('#datos').hidden = false;
   pintarParte(m);
   pintarCanales(m);
   pintarDatos();
@@ -947,8 +989,8 @@ async function leer() {
     marca.classList.remove('falla');
     $('#aviso').hidden = true;
   } catch (error) {
-    const previa = estado.modelo ? ' ' + conPunto('Se muestra la lectura de ' + laHora(estado.modelo.ahora)) : '';
-    marca.textContent = estado.modelo ? 'Sin lectura desde ' + laHora(estado.modelo.ahora) : 'Sin lectura';
+    const previa = estado.modelo ? ' ' + conPunto('Se muestra la lectura ' + momento(estado.modelo.ahora, 'de')) : '';
+    marca.textContent = estado.modelo ? 'Sin lectura ' + momento(estado.modelo.ahora, 'desde') : 'Sin lectura';
     marca.classList.add('falla');
     $('#aviso-texto').textContent = 'No se leyeron las cifras: ' + error.message + '.' + previa + ' Se intenta de nuevo cada minuto.';
     $('#aviso').hidden = false;
@@ -973,6 +1015,8 @@ function marcar(nombre, valor) {
 function conectarControles() {
   const guardado = recordar('periodo');
   if (PERIODOS[guardado]) { estado.periodo = guardado; marcar('periodo', guardado); }
+  const orden = (recordar('orden') || '').split(':');
+  if (COMPARAR[orden[0]]) estado.orden = { campo: orden[0], sentido: orden[1] === '1' ? 1 : -1 };
 
   $('#periodo').addEventListener('change', function (e) {
     estado.periodo = e.target.value;
@@ -1000,18 +1044,19 @@ function conectarControles() {
     const campo = th.dataset.campo;
     if (estado.orden.campo === campo) estado.orden.sentido *= -1;
     else estado.orden = { campo: campo, sentido: campo === 'titulo' || campo === 'canal' ? 1 : -1 };
+    guardar('orden', estado.orden.campo + ':' + estado.orden.sentido);
     pintarDatos();
   });
   $('#orden-movil').addEventListener('change', function (e) {
     estado.orden = { campo: e.target.value, sentido: -1 };
+    guardar('orden', estado.orden.campo + ':-1');
     pintarDatos();
   });
 
   for (const nombre of ['vistas', 'subs']) {
     const boton = $('#' + nombre + '-tabla-boton');
     boton.addEventListener('click', function () {
-      const enTabla = boton.getAttribute('aria-pressed') !== 'true';
-      boton.setAttribute('aria-pressed', String(enTabla));
+      const enTabla = $('#' + nombre + '-tabla').hidden;
       boton.textContent = enTabla ? 'Ver como gráfica' : 'Ver como tabla';
       $('#' + nombre + '-tabla').hidden = !enTabla;
       $('#' + nombre + '-lienzo').hidden = enTabla;
@@ -1027,11 +1072,16 @@ function conectarControles() {
   });
   rotularTema();
 
-  $('#salir-dueno').addEventListener('click', function () {
-    guardar('dueno', null);
-    document.documentElement.removeAttribute('data-dueno');
-    if (estado.modelo) { for (const caja of document.querySelectorAll('[data-campo="ultimo"]')) caja.dataset.video = ''; pintar(); }
+  const botonDueno = $('#dueno-boton');
+  const rotularDueno = function () { botonDueno.textContent = esDueno() ? 'Desactivar el modo dueño' : 'Activar el modo dueño'; };
+  botonDueno.addEventListener('click', function () {
+    const activar = !esDueno();
+    guardar('dueno', activar ? '1' : null);
+    document.documentElement.toggleAttribute('data-dueno', activar);
+    rotularDueno();
+    pintar();
   });
+  rotularDueno();
   $('#aviso-boton').addEventListener('click', leer);
 
   document.addEventListener('visibilitychange', function () {
@@ -1064,7 +1114,7 @@ function iniciar() {
     try {
       estado.modelo = preparar(JSON.parse(guardado));
       pintar();
-      $('#estado').textContent = 'Lectura guardada de ' + laHora(estado.modelo.ahora);
+      $('#estado').textContent = 'Lectura guardada ' + momento(estado.modelo.ahora, 'de');
     } catch (error) {
       guardar('datos', null);
     }
