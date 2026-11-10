@@ -864,7 +864,10 @@ function pintarVideos(m, inicio) {
     if (mismo) mismo.focus({ preventScroll: true });
   }
 
+  const conFiltro = estado.canal !== '' || estado.tipo !== '';
   $('#videos-vacio').hidden = lista.length > 0;
+  $('#videos-vacio-texto').textContent = conFiltro ? 'Sin videos con ese filtro.' : 'YouTube no devolvió videos en la última lectura.';
+  $('#quitar-filtros').hidden = !conFiltro;
   $('#tabla-videos').hidden = lista.length === 0;
   const recortado = m.canales.some((c) => c.total > m.videos.filter((v) => v.ci === c.ci).length);
   $('#videos-nota').textContent = cuantos(lista.length, 'video', 'videos') + (recortado ? ', de los 15 más recientes de cada canal.' : '.');
