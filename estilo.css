@@ -380,7 +380,7 @@ th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; bor
 .nicho-nombre strong { font-weight: 600; }
 .nicho-top { margin: 0.2rem 0 0; color: var(--tinta-2); font-size: 0.875rem; line-height: 1.4; overflow-wrap: anywhere; }
 .nicho-linea { align-self: center; line-height: 0; }
-.nicho-cifra { display: grid; justify-items: end; gap: 0.2rem; font-variant-numeric: tabular-nums; font-size: 0.875rem; }
+.nicho-cifra { grid-column: 2; display: grid; justify-items: end; gap: 0.2rem; font-variant-numeric: tabular-nums; font-size: 0.875rem; }
 .nicho-calor { font-size: 1.125rem; font-weight: 600; line-height: 1.1; }
 .nicho-barra { display: block; width: 6.5rem; height: 3px; background: var(--linea); }
 .nicho-barra span { display: block; height: 100%; margin-left: auto; background: var(--serie); }

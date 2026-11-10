@@ -973,8 +973,9 @@ function textoDeCambio(c) {
 // Línea de 30 días sin ejes: la forma de la serie, con el último punto marcado.
 function chispa(serie) {
   const ancho = 132, alto = 30, borde = 4;
+  // Con una sola medición no hay línea que dibujar.
+  if (serie.length < 2) return null;
   const svg = trazar('svg', { class: 'chispa', viewBox: '0 0 ' + ancho + ' ' + alto, width: ancho, height: alto, 'aria-hidden': 'true' });
-  if (serie.length < 2) return agregar(svg, [trazar('circle', { class: 'punto', cx: ancho - borde, cy: alto / 2, r: 3 })]);
   const t0 = serie[0][0], t1 = serie[serie.length - 1][0];
   const valores = serie.map((p) => p[1]);
   const min = Math.min(...valores), max = Math.max(...valores);
@@ -995,7 +996,7 @@ function pintarNichos(m) {
   const dias = new Set();
   for (const id in n.serie) for (const p of n.serie[id]) dias.add(new Date(p[0]).toDateString());
   $('#nichos-nota').textContent = 'Calor de cada familia de temas: vistas sumadas de los 10 videos de más de 4 minutos más vistos entre los publicados en los últimos 30 días. '
-    + 'Se mide una vez al día' + (n.leido ? '; última medición, ' + fechaConHora.format(n.leido) : '') + '. '
+    + conPunto('Se mide una vez al día' + (n.leido ? '; última medición, ' + fechaConHora.format(n.leido) : '')) + ' '
     + (dias.size < 2 ? 'La subida o la bajada de cada familia se ve desde la segunda medición.' : 'La línea es el calor de cada día medido, hasta 30.');
   const grupos = CANALES.map(function (c) {
     const filas = n.familias.filter((f) => f.canal === c.nombre).map(function (f) {
