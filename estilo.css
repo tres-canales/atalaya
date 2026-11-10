@@ -1,7 +1,9 @@
-/* Fuentes: subconjunto «latin» sin modificar. Licencias en fuentes/LICENCIAS.txt. */
-@font-face { font-family: "Barlow"; font-weight: 400; font-display: swap; src: url("fuentes/barlow-400.woff2") format("woff2"); }
-@font-face { font-family: "Barlow"; font-weight: 500; font-display: swap; src: url("fuentes/barlow-500.woff2") format("woff2"); }
-@font-face { font-family: "Barlow Condensed"; font-weight: 600; font-display: swap; src: url("fuentes/barlow-estrecha-600.woff2") format("woff2"); }
+/* Fuentes: subconjunto «latin» sin modificar. Licencias en fuentes/LICENCIAS.txt.
+   El marco usa una sola familia, Ysabeau Office. No trae «tnum» porque sus diez
+   cifras ya tienen el mismo ancho por defecto: las columnas alinean sin pedirlo. */
+@font-face { font-family: "Ysabeau Office"; font-weight: 400; font-display: swap; src: url("fuentes/ysabeau-office-400.woff2") format("woff2"); }
+@font-face { font-family: "Ysabeau Office"; font-weight: 500; font-display: swap; src: url("fuentes/ysabeau-office-500.woff2") format("woff2"); }
+@font-face { font-family: "Ysabeau Office"; font-weight: 600; font-display: swap; src: url("fuentes/ysabeau-office-600.woff2") format("woff2"); }
 /* Las que siguen solo se usan en el bloque de su canal. */
 @font-face { font-family: "Inter"; font-weight: 800; font-display: swap; src: url("fuentes/inter-800.woff2") format("woff2"); }
 @font-face { font-family: "Anton"; font-weight: 400; font-display: swap; src: url("fuentes/anton-400.woff2") format("woff2"); }
@@ -17,7 +19,7 @@
   --fondo: #ffffff;
   --tinta: #000000;
   --tinta-2: #595959;
-  --tinta-3: #8a8a8a;
+  --tinta-3: #767676;
   --linea: #e6e6e6;
   --linea-2: #c9c9c9;
   --superficie: #f4f4f4;
@@ -27,8 +29,9 @@
   --serie-pa: #eb6834;
   /* En pantallas muy anchas el margen crece para que el contenido no pase de 96rem. */
   --margen: max(clamp(1.25rem, 4vw, 3.5rem), calc((100vw - 96rem) / 2));
-  --fuente: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --estrecha: "Barlow Condensed", "Arial Narrow", "Barlow", system-ui, sans-serif;
+  --fuente: "Ysabeau Office", "Gill Sans", Candara, "Segoe UI", system-ui, sans-serif;
+  /* Solo queda como respaldo de Anton en las cifras de Peso Duro. */
+  --estrecha: "Arial Narrow", "Ysabeau Office", system-ui, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-tema="claro"])) {
@@ -60,13 +63,15 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-behavior: smooth; }
+/* Ysabeau Office tiene la x baja (0.414 em): toda la escala sube un 12.5 % para
+   que el texto se lea al tamaño que tenía. */
+html { font-size: 112.5%; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-behavior: smooth; }
 body {
   margin: 0;
   background: var(--fondo);
   color: var(--tinta);
   font: 400 1.0625rem/1.5 var(--fuente);
-  /* Solo se cargan los pesos 400 y 500: sin esto el navegador fabrica una negrita falsa. */
+  /* Solo se cargan los pesos 400, 500 y 600: sin esto el navegador fabrica una negrita falsa. */
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }
@@ -105,7 +110,7 @@ img { max-width: 100%; }
 }
 .marca {
   display: inline-flex; align-items: center; gap: 0.5rem;
-  font: 600 1.75rem/1 var(--estrecha); letter-spacing: 0.005em; text-decoration: none;
+  font: 600 1.75rem/1 var(--fuente); letter-spacing: 0.005em; text-decoration: none;
 }
 .marca svg { width: 1.6rem; height: 1.6rem; }
 .secciones { display: flex; gap: clamp(1rem, 2.2vw, 1.9rem); margin-left: auto; }
@@ -242,7 +247,7 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .graficas { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: clamp(2.5rem, 4.5vw, 4.5rem); margin-top: clamp(1.75rem, 3vw, 2.5rem); }
 .grafica { min-width: 0; }
 .grafica-cab { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; }
-h2 { margin: 0; font: 600 clamp(1.875rem, 1.45rem + 1.2vw, 2.5rem)/1 var(--estrecha); letter-spacing: 0.002em; }
+h2 { margin: 0; font: 600 clamp(1.875rem, 1.45rem + 1.2vw, 2.5rem)/1 var(--fuente); letter-spacing: -0.01em; }
 .grafica-cab .boton-texto { font-size: 0.9375rem; }
 .grafica-nota { margin: 0.45rem 0 0; color: var(--tinta-2); font-size: 0.9375rem; text-wrap: pretty; }
 .grafica-nota:empty { display: none; }
@@ -258,7 +263,7 @@ h2 { margin: 0; font: 600 clamp(1.875rem, 1.45rem + 1.2vw, 2.5rem)/1 var(--estre
 
 .lienzo { position: relative; }
 .lienzo svg { display: block; width: 100%; height: auto; overflow: visible; outline-offset: 6px; }
-.lienzo text { font-family: var(--fuente); font-size: 12.5px; fill: var(--tinta-2); font-variant-numeric: tabular-nums; }
+.lienzo text { font-family: var(--fuente); font-size: 13.5px; fill: var(--tinta-2); font-variant-numeric: tabular-nums; }
 .lienzo .rejilla { stroke: var(--linea); stroke-width: 1; shape-rendering: crispEdges; }
 .lienzo .base { stroke: var(--linea-2); stroke-width: 1; shape-rendering: crispEdges; }
 .lienzo .franja { fill: var(--superficie); }
@@ -266,8 +271,8 @@ h2 { margin: 0; font: 600 clamp(1.875rem, 1.45rem + 1.2vw, 2.5rem)/1 var(--estre
 .lienzo .trazo { fill: none; stroke: var(--serie); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .lienzo .punto { fill: var(--serie); stroke: var(--fondo); stroke-width: 2; }
 .lienzo .mira { stroke: var(--tinta); stroke-width: 1; shape-rendering: crispEdges; }
-.lienzo .valor { fill: var(--tinta); font-size: 13px; font-weight: 500; }
-.lienzo .anotacion { fill: var(--tinta-2); font-size: 12.5px; }
+.lienzo .valor { fill: var(--tinta); font-size: 14px; font-weight: 500; }
+.lienzo .anotacion { fill: var(--tinta-2); font-size: 13.5px; }
 .lienzo .anotacion-linea { stroke: var(--tinta-3); stroke-width: 1; shape-rendering: crispEdges; }
 .lienzo .zona { fill: transparent; }
 .lienzo-vacio { position: absolute; inset: 0 0 1.75rem 0; display: grid; place-items: center; margin: 0; padding: 0 2rem; text-align: center; color: var(--tinta-2); font-size: 0.9375rem; pointer-events: none; }
@@ -354,7 +359,9 @@ th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; bor
   .pie { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 52rem) {
-  .estado { margin-left: auto; }
+  .cabecera { column-gap: 0.75rem; }
+  .marca { font-size: 1.5rem; }
+  .estado { margin-left: auto; font-size: 0.8125rem; }
   .secciones { order: 5; flex: 1 0 100%; margin-left: 0; overflow-x: auto; }
   .orden-movil { display: block; }
   .tabla thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
