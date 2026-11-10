@@ -370,6 +370,27 @@ th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; bor
 .pie a:hover { color: var(--tinta); }
 .sin-js { margin: 2rem var(--margen); padding: 1rem; border: 1px solid var(--tinta); }
 
+/* Nichos */
+.nichos { padding: 0 var(--margen) clamp(3rem, 6vw, 5rem); }
+.nichos-grupos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(2rem, 4vw, 4rem); margin-top: clamp(1.5rem, 3vw, 2.5rem); }
+.nichos-grupo h3 { margin: 0; padding-bottom: 0.6rem; font: 600 1.125rem/1.2 var(--fuente); border-bottom: 2px solid var(--serie); }
+.nichos-lista { margin: 0; padding: 0; list-style: none; }
+.nichos-lista li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.35rem 1rem; align-items: start; padding: 0.95rem 0; border-bottom: 1px solid var(--linea); }
+.nicho-nombre { grid-column: 1 / -1; min-width: 0; }
+.nicho-nombre strong { font-weight: 600; }
+.nicho-top { margin: 0.2rem 0 0; color: var(--tinta-2); font-size: 0.875rem; line-height: 1.4; overflow-wrap: anywhere; }
+.nicho-linea { align-self: center; line-height: 0; }
+.nicho-cifra { display: grid; justify-items: end; gap: 0.2rem; font-variant-numeric: tabular-nums; font-size: 0.875rem; }
+.nicho-calor { font-size: 1.125rem; font-weight: 600; line-height: 1.1; }
+.nicho-barra { display: block; width: 6.5rem; height: 3px; background: var(--linea); }
+.nicho-barra span { display: block; height: 100%; margin-left: auto; background: var(--serie); }
+.nicho-cifra .tenue { color: var(--tinta-2); }
+.nicho-cifra .sube, .nicho-cifra .baja { font-weight: 500; }
+.chispa { display: block; max-width: 100%; overflow: visible; }
+.chispa .trazo { fill: none; stroke: var(--serie); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chispa .punto { fill: var(--serie); }
+@media (max-width: 68rem) { .nichos-grupos { grid-template-columns: minmax(0, 1fr); } }
+
 @media (min-width: 80rem) {
   .estado-nota { display: inline; }
 }

@@ -205,6 +205,7 @@ function preparar(d) {
     cambiosSubs: mov.subs || [],
     diario: diario,
     registroDesde: registroDesde,
+    nichos: d.nichos && Array.isArray(d.nichos.familias) ? d.nichos : null,
   };
 }
 
@@ -936,6 +937,92 @@ function pintar() {
   pintarParte(m);
   pintarCanales(m);
   pintarDatos();
+  // La sección de nichos es independiente: si falla, el resto de la página queda dibujado.
+  try { pintarNichos(m); } catch (error) { console.error('nichos: ' + error); $('#nichos').hidden = true; }
+}
+
+/* ---------- Nichos: interés por familias de temas ---------- */
+
+// «Calor» de una familia: vistas sumadas de los 10 videos de más de 4 minutos
+// más vistos entre los publicados sobre ella en los últimos 30 días. El
+// servidor lo mide una vez al día y entrega la serie como [ms, calor, videos].
+
+// Cambio entre la última medición y la más cercana a siete días atrás. Con
+// una sola medición, o si la base es cero, no hay cambio que mostrar.
+function cambioDeNicho(serie) {
+  if (serie.length < 2) return null;
+  const ultimo = serie[serie.length - 1];
+  const meta = ultimo[0] - 7 * DIA;
+  let base = null;
+  for (const p of serie) {
+    if (p[0] > ultimo[0] - DIA / 2) continue;
+    if (!base || Math.abs(p[0] - meta) < Math.abs(base[0] - meta)) base = p;
+  }
+  if (!base || !base[1]) return null;
+  return { dias: Math.max(1, Math.round((ultimo[0] - base[0]) / DIA)), razon: (ultimo[1] - base[1]) / base[1] };
+}
+
+function textoDeCambio(c) {
+  if (!c) return crear('span', { clase: 'tenue' }, 'primera medición');
+  const pct = Math.round(Math.abs(c.razon) * 100);
+  const lapsoTexto = c.dias === 1 ? 'desde ayer' : 'en ' + c.dias + ' días';
+  if (pct === 0) return crear('span', { clase: 'tenue' }, 'igual ' + lapsoTexto);
+  return crear('span', { clase: c.razon > 0 ? 'sube' : 'baja' }, (c.razon > 0 ? '▲ sube ' : '▼ baja ') + fmt(pct) + ' % ' + lapsoTexto);
+}
+
+// Línea de 30 días sin ejes: la forma de la serie, con el último punto marcado.
+function chispa(serie) {
+  const ancho = 132, alto = 30, borde = 4;
+  const svg = trazar('svg', { class: 'chispa', viewBox: '0 0 ' + ancho + ' ' + alto, width: ancho, height: alto, 'aria-hidden': 'true' });
+  if (serie.length < 2) return agregar(svg, [trazar('circle', { class: 'punto', cx: ancho - borde, cy: alto / 2, r: 3 })]);
+  const t0 = serie[0][0], t1 = serie[serie.length - 1][0];
+  const valores = serie.map((p) => p[1]);
+  const min = Math.min(...valores), max = Math.max(...valores);
+  const x = (t) => borde + (ancho - 2 * borde) * (t1 === t0 ? 1 : (t - t0) / (t1 - t0));
+  const y = (v) => (max === min ? alto / 2 : borde + (alto - 2 * borde) * (1 - (v - min) / (max - min)));
+  const puntos = serie.map((p) => x(p[0]).toFixed(1) + ',' + y(p[1]).toFixed(1)).join(' ');
+  return agregar(svg, [
+    trazar('polyline', { class: 'trazo', points: puntos }),
+    trazar('circle', { class: 'punto', cx: x(t1).toFixed(1), cy: y(valores[valores.length - 1]).toFixed(1), r: 3 }),
+  ]);
+}
+
+function pintarNichos(m) {
+  const seccion = $('#nichos');
+  const n = m.nichos;
+  if (!n || !n.familias.length) { seccion.hidden = true; return; }
+  seccion.hidden = false;
+  const dias = new Set();
+  for (const id in n.serie) for (const p of n.serie[id]) dias.add(new Date(p[0]).toDateString());
+  $('#nichos-nota').textContent = 'Calor de cada familia de temas: vistas sumadas de los 10 videos de más de 4 minutos más vistos entre los publicados en los últimos 30 días. '
+    + 'Se mide una vez al día' + (n.leido ? '; última medición, ' + fechaConHora.format(n.leido) : '') + '. '
+    + (dias.size < 2 ? 'La subida o la bajada de cada familia se ve desde la segunda medición.' : 'La línea es el calor de cada día medido, hasta 30.');
+  const grupos = CANALES.map(function (c) {
+    const filas = n.familias.filter((f) => f.canal === c.nombre).map(function (f) {
+      const serie = (n.serie[f.id] || []).slice().sort((a, b) => a[0] - b[0]);
+      const ultimo = serie[serie.length - 1];
+      return { f: f, serie: serie, calor: ultimo ? ultimo[1] : 0, top: (n.top[f.id] || [])[0] };
+    }).sort((a, b) => b.calor - a.calor);
+    if (!filas.length) return null;
+    const tope = filas[0].calor || 1;
+    return crear('section', { clase: 'nichos-grupo', datos: { serie: c.clave } },
+      crear('h3', null, c.nombre),
+      crear('ul', { clase: 'nichos-lista' }, filas.map(function (fila) {
+        const t = fila.top;
+        return crear('li', null,
+          crear('div', { clase: 'nicho-nombre' },
+            crear('strong', null, fila.f.nombre),
+            t && t.id ? crear('p', { clase: 'nicho-top' }, 'Lo más visto del mes: ',
+              enlaceExterno('https://www.youtube.com/watch?v=' + encodeURIComponent(t.id), t.t || 'video'),
+              ' · ' + t.c + ' · ' + cuantos(t.n, 'vista', 'vistas')) : null),
+          crear('div', { clase: 'nicho-linea' }, chispa(fila.serie)),
+          crear('div', { clase: 'nicho-cifra' },
+            crear('span', { clase: 'nicho-calor' }, fmt(fila.calor)),
+            crear('span', { clase: 'nicho-barra', 'aria-hidden': 'true' }, crear('span', { style: 'width:' + Math.max(2, Math.round(100 * fila.calor / tope)) + '%' })),
+            textoDeCambio(cambioDeNicho(fila.serie))));
+      })));
+  });
+  reemplazar($('#nichos-grupos'), grupos);
 }
 
 /* ---------- Lectura ---------- */

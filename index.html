@@ -26,8 +26,8 @@
 <link rel="preload" href="fuentes/ysabeau-office-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preconnect" href="https://script.google.com">
 <link rel="preconnect" href="https://i.ytimg.com">
-<link rel="stylesheet" href="estilo.css?v=4">
-<script src="tema.js?v=4"></script>
+<link rel="stylesheet" href="estilo.css?v=5">
+<script src="tema.js?v=5"></script>
 </head>
 <body>
 <a class="salto" href="#contenido">Ir al contenido</a>
@@ -48,6 +48,7 @@
     <a href="#vistas">Vistas</a>
     <a href="#suscriptores">Suscriptores</a>
     <a href="#videos">Videos</a>
+    <a href="#nichos">Nichos</a>
   </nav>
   <p class="estado"><span id="estado">Cargando cifras…</span> <span class="estado-nota">Se lee de nuevo cada minuto.</span></p>
   <button class="boton-tema" id="tema" type="button">
@@ -233,6 +234,13 @@
     <p class="vacio" id="videos-vacio" hidden><span id="videos-vacio-texto">Sin videos con ese filtro.</span> <button class="boton-texto" id="quitar-filtros" type="button">Quitar los filtros</button></p>
     <p class="volver"><a href="#contenido">Volver arriba</a></p>
   </section>
+
+  <section class="nichos" id="nichos" aria-labelledby="nichos-titulo" hidden>
+    <h2 id="nichos-titulo">Nichos</h2>
+    <p class="grafica-nota" id="nichos-nota"></p>
+    <div class="nichos-grupos" id="nichos-grupos"></div>
+    <p class="volver"><a href="#contenido">Volver arriba</a></p>
+  </section>
   </div>
 </main>
 
@@ -261,6 +269,6 @@
 </footer>
 
 <noscript><p class="sin-js">Este sitio necesita JavaScript para leer las cifras de YouTube.</p></noscript>
-<script src="atalaya.js?v=4" defer></script>
+<script src="atalaya.js?v=5" defer></script>
 </body>
 </html>
