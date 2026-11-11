@@ -1154,28 +1154,16 @@ function publicadoHace(m, v) {
   return edad < 7 * DIA ? 'hace ' + lapso(edad) : fechaNumerica.format(v.publicado);
 }
 
-// Un largo frente a la mediana de su familia de temas. Se compara a los 7
-// días de publicado; antes de eso, con las vistas que lleva.
-function frenteASuFamilia(m, v) {
+// Familia de temas de un largo y la demanda medida de esa familia. La mediana
+// de la familia son vistas acumuladas durante años por los primeros resultados
+// de la búsqueda, así que no se divide entre las vistas de un video nuevo: esa
+// proporción siempre salía por debajo del 1 % y no decía nada del video.
+function familiaDelVideo(v) {
   if (v.corto) return null;
   const familia = (FAMILIAS[v.ci] || []).find((f) => f.patron.test(v.titulo));
   if (!familia) return null;
-  const edad = m.ahora - v.publicado;
-  const aLosDias = (n) => (n === 1 ? 'a 1 día' : 'a los ' + n + ' días');
-  let vistas = v.vistas, cuando = edad < DIA ? 'en su primer día' : aLosDias(Math.floor(edad / DIA));
-  if (edad >= 7 * DIA) {
-    cuando = 'a los 7 días';
-    const s = m.diario[v.id];
-    // La lectura diaria más cercana al séptimo día; sin ella, las vistas de hoy.
-    let cerca = null;
-    for (const p of s ? s.puntos : []) if (p.t <= v.publicado + 7.5 * DIA) cerca = p;
-    if (cerca && cerca.t >= v.publicado + 6 * DIA) vistas = cerca.v;
-    else cuando = aLosDias(Math.floor(edad / DIA));
-  }
-  const pct = (100 * vistas) / familia.mediana;
   return crear('span', { clase: 'video-dato video-familia' },
-    crear('span', { clase: 'medidor-mini', 'aria-hidden': 'true' }, crear('span', { estilo: { width: Math.max(2, Math.min(100, pct)).toFixed(1) + '%' } })),
-    'Familia «' + familia.nombre + '»: ' + fmt(vistas) + ' de ' + fmt(familia.mediana) + ' (' + (pct < 1 ? 'menos del 1' : fmt(Math.round(pct))) + ' %) ' + cuando);
+    'Familia «' + familia.nombre + '». Demanda del tema: ' + fmt(familia.mediana) + ' vistas de mediana en la búsqueda');
 }
 
 function pintarVideos(m, inicio) {
@@ -1205,7 +1193,7 @@ function pintarVideos(m, inicio) {
         crear('div', { clase: 'video-texto' },
           enlaceExterno(v.url, v.titulo, { clase: 'video-titulo', datos: { foco: 't' + v.id } }),
           crear('span', { clase: 'video-dato' }, dato), ahora,
-          frenteASuFamilia(m, v),
+          familiaDelVideo(v),
           cambios.filter((x) => x.id === v.id).map((x) => crear('span', { clase: 'video-dato video-cambio' }, fraseDeCambio(m, x)))))),
       crear('td', { clase: 'solo-ancho' }, enlaceExterno(c.url, [c.logo ? crear('img', { src: c.logo, alt: '', width: 24, height: 24, loading: 'lazy' }) : null, c.nombre], { clase: 'celda-canal', datos: { foco: 'c' + v.id } })),
       crear('td', { clase: 'solo-ancho' }, crear('time', { datetime: new Date(v.publicado).toISOString(), title: fechaConHora.format(v.publicado) }, publicadoHace(m, v))),
@@ -1226,7 +1214,7 @@ function pintarVideos(m, inicio) {
   $('#tabla-videos').hidden = lista.length === 0;
   const recortado = m.canales.some((c) => c.total > m.videos.filter((v) => v.ci === c.ci).length);
   $('#videos-nota').textContent = lista.length === 0 && !conFiltro ? '' : cuantos(lista.length, 'video', 'videos') + (recortado ? ', de los 15 más recientes de cada canal.' : '.')
-    + (lista.some((v) => !v.corto) ? ' Cada largo se compara con la mediana de vistas de su familia de temas, medida el ' + FAMILIAS_FECHA + '; la familia se asigna por las palabras del título.' : '');
+    + (lista.some((v) => !v.corto) ? ' Cada largo muestra su familia de temas, asignada por las palabras del título, y la demanda de esa familia: la mediana de vistas acumuladas por los 15 primeros resultados de la búsqueda de YouTube, medida el ' + FAMILIAS_FECHA + '. Mide el interés por el tema y no es una meta de vistas para un video nuevo.' : '');
   $('#orden-periodo').textContent = 'Más vistas en ' + periodo.nombre;
 
   for (const th of document.querySelectorAll('#tabla-videos th')) {
