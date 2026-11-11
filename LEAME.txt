@@ -1,0 +1,1 @@
+Datos que el sitio lee cada diez minutos. Los escribe cada hora la tarea «Datos externos» de la rama main; esta rama guarda una sola confirmación.
