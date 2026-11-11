@@ -619,7 +619,7 @@ function pintarSenales(m) {
   const propias = senales.sort((a, b) => b.peso - a.peso).slice(0, 2);
   const ajenas = [];
   for (const v of m.tendencias ? m.tendencias.ref : []) {
-    if (!(v.med > 0) || v.n < 1.6 * v.med) continue;
+    if (!(v.med > 0) || Math.round((10 * v.n) / v.med) < 16) continue;
     ajenas.push({ peso: v.n / v.med, nodo: [
       enlaceExterno('https://www.youtube.com/watch?v=' + encodeURIComponent(v.id), v.t), ', de ' + v.c + ', va ' + unaCifra(v.n / v.med) + ' veces sobre la mediana de su canal ' + alCabo(m.ahora - v.p) + ' de publicado. ',
       crear('a', { href: '#tendencias' }, 'Ver tendencias'),
@@ -1347,7 +1347,8 @@ function panelDeReferencia(m, t) {
   // La barra llega a 3 veces la mediana; la raya marca 1 vez.
   const tope = 3;
   const lista = crear('ol', { clase: 'tend-lista' }, filas.map(function (f) {
-    const pasa = f.razon >= 1.6;
+    // El umbral se aplica a la cifra que se muestra, redondeada a un decimal.
+    const pasa = Math.round(f.razon * 10) >= 16;
     const frente = f.razon >= 1 ? unaCifra(f.razon) + (f.razon === 1 ? ' vez' : ' veces') + ' la mediana' : fmt(Math.round(f.razon * 100)) + ' % de la mediana';
     return filaDeVideoAjeno(m, f.v, 0, 1, crear('span', { clase: 'frente' + (pasa ? ' pasa' : '') },
       crear('span', { clase: 'medidor-razon', 'aria-hidden': 'true' }, crear('span', { estilo: { width: Math.max(1.5, Math.min(100, (100 * f.razon) / tope)).toFixed(1) + '%' } })),
