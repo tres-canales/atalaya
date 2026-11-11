@@ -528,10 +528,12 @@ function pintarCifras(m) {
   });
 
   const hoy = dias[dias.length - 1], ayer = dias[dias.length - 2];
-  const conAyer = isFinite(m.registroDesde) && m.registroDesde < ayer.fin;
+  // Ayer solo sirve de comparación si el registro lo cubre entero.
+  const conAyer = isFinite(m.registroDesde) && m.registroDesde <= ayer.t;
   ponerTarjeta('cifra-hoy', {
     valor: sumar(hoy.valores), de: 'vistas de hoy',
-    delta: conAyer ? ['Ayer, ', crear('strong', null, fmt(sumar(ayer.valores))), ' en el día'] : [],
+    delta: conAyer ? ['Ayer, ', crear('strong', null, fmt(sumar(ayer.valores))), ' en el día']
+      : isFinite(m.registroDesde) ? ['El registro por día empezó el ' + diaYMes.format(m.registroDesde)] : [],
     traza: trazaDeColumnas(dias.map((c) => sumar(c.valores))),
     pie: 'Por día, últimos 7 días',
     reparto: hoy.valores,
