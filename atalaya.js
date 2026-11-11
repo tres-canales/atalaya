@@ -282,6 +282,7 @@ function preparar(d) {
     registroDesde: registroDesde,
     nichos: d.nichos && Array.isArray(d.nichos.familias) ? d.nichos : null,
     tendencias: d.tendencias && Array.isArray(d.tendencias.ref) && d.tendencias.leido ? d.tendencias : null,
+    comentarios: d.comentarios && Array.isArray(d.comentarios.lista) && d.comentarios.lista.length ? d.comentarios : null,
     cambios: (Array.isArray(d.cambios) ? d.cambios : []).filter((f) => Array.isArray(f) && f.length >= 4),
   };
 }
@@ -1256,6 +1257,7 @@ function pintar() {
   try { pintarAhora(m); } catch (error) { console.error('ahora: ' + error); }
   try { pintarTendencias(m); } catch (error) { console.error('tendencias: ' + error); $('#tendencias').hidden = true; }
   try { pintarNichos(m); } catch (error) { console.error('nichos: ' + error); $('#nichos').hidden = true; }
+  try { pintarComentarios(m); } catch (error) { console.error('comentarios: ' + error); $('#comentarios').hidden = true; }
   try { pintarCalendario(m); } catch (error) { console.error('calendario: ' + error); $('#calendario').hidden = true; }
 }
 /* ---------- Cambios de título y de miniatura ---------- */
@@ -1440,6 +1442,56 @@ function pintarTendencias(m, forzar) {
 }
 
 /* ---------- Calendario ---------- */
+
+/* ---------- Comentarios de los canales en otros videos ---------- */
+
+// Los anota vía «?anotar=» quien publica el comentario; Atalaya Vigía los relee cada hora
+// y guarda «me gusta», respuestas y si el comentario sigue visible.
+function pintarComentarios(m) {
+  const c = m.comentarios;
+  $('#comentarios').hidden = !c;
+  if (!c) return;
+  const r = c.resumen || {};
+  $('#com-nota').textContent = 'Comentarios que los tres canales dejaron en videos de otros canales de su nicho. Se releen cada hora; última lectura el ' + fechaNumerica.format(c.leido) + ' a las ' + horaMinuto.format(c.leido).replace(/\.$/, '') + '.';
+  const oculto = c.lista.filter((x) => x.ok === false).length;
+  const dato = (valor, rotulo) => crear('div', { clase: 'com-dato' }, crear('strong', null, fmt(valor)), crear('span', null, rotulo));
+  reemplazar($('#com-resumen'), [
+    dato(r.total || c.lista.length, 'publicados'),
+    dato(r.conRespuesta || 0, 'con respuesta'),
+    dato(r.respuestas || 0, 'respuestas'),
+    dato(r.megusta || 0, '«me gusta»'),
+    dato(oculto, 'ya no aparecen'),
+  ]);
+  const estado = m.estadoComentarios || (m.estadoComentarios = { filtro: 'todos' });
+  const filtros = [['todos', 'Todos'], ['respuesta', 'Con respuesta'], ['oculto', 'Ya no aparecen']];
+  reemplazar($('#com-barra'), [segmentos('com', filtros, estado.filtro)]);
+  $('#com-barra').onchange = function (e) {
+    estado.filtro = e.target.value;
+    pintarComentarios(m);
+  };
+  const visibles = c.lista.filter((x) => estado.filtro === 'respuesta' ? x.n > 0 : estado.filtro === 'oculto' ? x.ok === false : true);
+  const dos = (n) => String(n).padStart(2, '0');
+  const fechaHora = (t) => { const d = new Date(t); return dos(d.getDate()) + '/' + dos(d.getMonth() + 1) + ' ' + horaMinuto.format(d); };
+  if (!visibles.length) {
+    reemplazar($('#com-lista'), [crear('li', { clase: 'com-vacio tenue' }, 'Ningún comentario cumple ese filtro.')]);
+    return;
+  }
+  reemplazar($('#com-lista'), visibles.map(function (x) {
+    const canal = CANALES[x.ci] || CANALES[0];
+    const enlace = 'https://www.youtube.com/watch?v=' + encodeURIComponent(x.v) + '&lc=' + encodeURIComponent(x.id);
+    return crear('li', { datos: { serie: canal.clave }, clase: x.ok === false ? 'sin-rastro' : null },
+      crear('div', { clase: 'com-cabeza' },
+        crear('span', { clase: 'video-dato' }, crear('span', { clase: 'clave' }), canal.nombre),
+        crear('span', { clase: 'tenue' }, fechaHora(x.t)),
+        x.ok === false ? crear('span', { clase: 'com-aviso' }, 'Ya no aparece') : null),
+      crear('p', { clase: 'com-texto' }, x.x),
+      crear('p', { clase: 'com-donde' }, 'En ', enlaceExterno(enlace, x.vt || 'el video'), x.vc ? ', de ' + x.vc : '', '. ',
+        fmt(x.l || 0) + ' «me gusta», ' + fmt(x.n || 0) + (x.n === 1 ? ' respuesta' : ' respuestas') + '.'),
+      (x.r || []).length ? crear('ul', { clase: 'com-respuestas' }, x.r.map(function (y) {
+        return crear('li', null, crear('strong', null, y.a || 'Alguien'), ' · ' + fechaHora(y.t), crear('p', null, y.x));
+      })) : null);
+  }));
+}
 
 function pintarCalendario(m) {
   const hoy = new Date(m.ahora);

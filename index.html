@@ -26,8 +26,8 @@
 <link rel="preload" href="fuentes/ysabeau-office-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preconnect" href="https://script.google.com">
 <link rel="preconnect" href="https://i.ytimg.com">
-<link rel="stylesheet" href="estilo.css?v=9">
-<script src="tema.js?v=9"></script>
+<link rel="stylesheet" href="estilo.css?v=10">
+<script src="tema.js?v=10"></script>
 </head>
 <body>
 <a class="salto" href="#contenido">Ir al contenido</a>
@@ -49,6 +49,7 @@
     <a href="#videos">Videos</a>
     <a href="#tendencias">Tendencias</a>
     <a href="#nichos">Nichos</a>
+    <a href="#comentarios">Comentarios</a>
     <a href="#calendario">Calendario</a>
   </nav>
   <p class="estado"><span id="estado">Cargando cifras…</span> <span class="estado-nota">Se lee de nuevo cada minuto.</span></p>
@@ -326,6 +327,15 @@
     <p class="volver"><a href="#contenido">Volver arriba</a></p>
   </section>
 
+  <section class="comentarios" id="comentarios" aria-labelledby="com-titulo" hidden>
+    <h2 id="com-titulo">Comentarios</h2>
+    <p class="grafica-nota" id="com-nota"></p>
+    <div class="com-resumen" id="com-resumen"></div>
+    <div class="tend-barra" id="com-barra"></div>
+    <ol class="com-lista" id="com-lista"></ol>
+    <p class="volver"><a href="#contenido">Volver arriba</a></p>
+  </section>
+
   <section class="calendario" id="calendario" aria-labelledby="cal-titulo">
     <h2 id="cal-titulo">Calendario</h2>
     <p class="grafica-nota" id="cal-nota"></p>
@@ -361,6 +371,6 @@
 </footer>
 
 <noscript><p class="sin-js">Este sitio necesita JavaScript para leer las cifras de YouTube.</p></noscript>
-<script src="atalaya.js?v=9" defer></script>
+<script src="atalaya.js?v=10" defer></script>
 </body>
 </html>
