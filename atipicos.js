@@ -13,7 +13,8 @@ const COMUNES_ATI = new Set(('para como esta este esto estos estas pero porque s
   + 'historia historias video videos verdad real reales caso casos mundo vida anos dias parte capitulo documental explicado explicada completo completa '
   + 'nunca siempre gran grande grandes nuevo nueva mejor mejores peor peores increible impactante secreto secretos misterio oscuro oscura sabias '
   + 'pasado paso pasa queda quedo vez veces primer primera ultimo ultima despues antes ahora hoy tambien muy mas menos tan tanto realmente '
-  + 'cosa cosas forma manera tiempo nombre gente persona personas hombre mujer ellos ellas nosotros usted cuenta cuentan dice dicen sera').split(' '));
+  + 'cosa cosas forma manera tiempo nombre gente persona personas hombre mujer ellos ellas nosotros usted cuenta cuentan dice dicen sera '
+  + 'minutos horas sabe saben cada rico rica ricos pobre pobres explica explicacion explicados explicadas resumen').split(' '));
 
 function claveDeNicho(ni) {
   if (ni === 'ref') return 'ref';
