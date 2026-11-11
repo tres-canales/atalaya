@@ -1,0 +1,38 @@
+# Cada hora lee las búsquedas en alza de Google Trends y las miniaturas de los
+# videos propios (tareas/externos.mjs) y deja el resultado en la rama «datos»,
+# de donde lo toma el sitio. La rama guarda una sola confirmación: se reescribe.
+name: Datos externos
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: externos
+  cancel-in-progress: false
+
+jobs:
+  leer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: datos
+          path: _datos
+      - name: Leer
+        run: node tareas/externos.mjs _datos
+      - name: Guardar en la rama datos
+        working-directory: _datos
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add externos.json estado.json
+          git diff --cached --quiet && exit 0
+          git commit --quiet --amend -m "Lectura de cada hora"
+          git push --quiet --force origin HEAD:datos

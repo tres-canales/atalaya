@@ -24,8 +24,73 @@ const PERIODOS = {
   '30d': { nombre: '30 días', cubos: 30, unidad: 'día' },
 };
 
+// Lo que no viene de Atalaya Vigía: las búsquedas en alza de Google y los
+// cambios de miniatura. Una tarea del repositorio los escribe cada hora en la
+// rama «datos».
+const EXTERNOS = 'https://raw.githubusercontent.com/tres-canales/atalaya/datos/externos.json';
+const CADA_EXTERNOS_MS = 10 * 60000;
+// Suscriptores que pide el Programa de socios de YouTube.
+const META_SUBS = 1000;
+const PAISES = [['DO', 'Rep. Dominicana'], ['MX', 'México'], ['ES', 'España'], ['CO', 'Colombia'], ['AR', 'Argentina'], ['US', 'EE. UU.']];
+const CATEGORIAS = {
+  1: 'Cine y animación', 2: 'Autos', 10: 'Música', 15: 'Mascotas y animales', 17: 'Deportes', 19: 'Viajes',
+  20: 'Videojuegos', 22: 'Gente y blogs', 23: 'Comedia', 24: 'Entretenimiento', 25: 'Noticias y política',
+  26: 'Consejos y estilo', 27: 'Educación', 28: 'Ciencia y tecnología', 29: 'Activismo',
+};
+
+// Familias de temas de cada canal, en el orden de CANALES. La mediana es la de
+// los 15 primeros resultados de la búsqueda de YouTube de sus temas (estudio
+// de reenfoque). Un largo entra en la primera familia cuyo patrón aparece en
+// su título; es una aproximación y así se dice en la página.
+const FAMILIAS_FECHA = '10/11/2026';
+const FAMILIAS = [
+  [
+    { nombre: 'Tesoros', mediana: 92594, patron: /tesoro|gale[oó]n|pirata|bot[ií]n|naufragio/i },
+    { nombre: 'Estafas', mediana: 54507, patron: /estafa|fraude|ponzi|pir[aá]mide/i },
+    { nombre: 'Robos y hackeos', mediana: 52084, patron: /\brob[oó]|hacke|atraco|asalto|ladr[oó]n/i },
+    { nombre: 'Fortunas', mediana: 427174, patron: /fortuna|millonario|loter[ií]a|m[aá]s rico|riqueza/i },
+    { nombre: 'Crisis', mediana: 5401, patron: /crisis|quiebra|corralito|hiperinflaci[oó]n|devaluaci[oó]n/i },
+    { nombre: 'Precio de territorios', mediana: 3371, patron: /alquil|territorio|compr[oó]|vendi[oó]|guant[aá]namo/i },
+  ],
+  [
+    { nombre: 'Fiestas y tradiciones', mediana: 32679, patron: /navidad|reyes magos|halloween|san valent[ií]n|tradici[oó]n|se celebra/i },
+    { nombre: 'Caribe y República Dominicana', mediana: 57412, patron: /hait[ií]|dominican|caribe|trujillo|cuba|puerto rico/i },
+    { nombre: 'Objetos y costumbres', mediana: 1146, patron: /invento|por qu[eé] usamos/i },
+    { nombre: 'Historia detrás de un titular', mediana: 126416, patron: /./ },
+  ],
+  [
+    { nombre: 'Supervivencia', mediana: 323684, patron: /sobreviv|andes|rescat|atrapad|n[aá]ufrag/i },
+    { nombre: 'Experimentos', mediana: 116007, patron: /experimento|psicol[oó]g|obediencia|stanford|milgram/i },
+    { nombre: 'Tragedias y misterios', mediana: 273840, patron: /tragedia|misterio|accidente|masacre|secta|desaparec/i },
+  ],
+];
+
+// Fechas que mueven búsquedas en los temas de los canales, con la demanda
+// medida el 10/11/2026 (mediana de vistas de los 15 primeros resultados).
+// «hasta» marca el final cuando la fecha es un intervalo.
+const CALENDARIO = [
+  { dia: '2026-11-19', que: 'Estreno de «The Altruists», la serie sobre FTX', ci: 0, demanda: 91380 },
+  { dia: '2026-11-25', que: 'Hermanas Mirabal (1960), origen del día contra la violencia hacia la mujer', ci: 1, demanda: 82062 },
+  { dia: '2026-12-01', hasta: '2026-12-08', que: 'Por qué la Navidad es el 25 de diciembre: días para publicarlo', ci: 1, demanda: 137061 },
+  { dia: '2026-12-01', hasta: '2026-12-19', que: '25 años del corralito argentino', ci: 0, demanda: 179758 },
+  { dia: '2026-12-02', que: '25 años de la quiebra de Enron', ci: 0, demanda: 111740 },
+  { dia: '2026-12-26', que: '35 años del fin de la URSS', ci: 1, demanda: 460897 },
+  { dia: '2027-01-01', que: '25 años del euro en la calle', ci: 0, demanda: 0 },
+  { dia: '2027-01-06', que: 'Reyes Magos', ci: 1, demanda: 69852 },
+  { dia: '2027-02-01', hasta: '2027-02-28', que: 'Paso Dyatlov (febrero de 1959)', ci: 2, demanda: 273840 },
+  { dia: '2027-02-14', que: 'San Valentín', ci: 1, demanda: 90152 },
+  { dia: '2027-02-27', que: 'Independencia dominicana', ci: 1, demanda: 91931 },
+  { dia: '2027-03-27', que: '50 años del accidente de Tenerife', ci: 2, demanda: 117344 },
+];
+
 const estado = {
   modelo: null,
+  externos: null,
+  tend: 'ref',
+  tendFormato: '',
+  tendSin: '',
+  pais: 'DO',
+  firmaTend: '',
   periodo: '24h',
   orden: { campo: 'periodo', sentido: -1 },
   canal: '',
@@ -68,6 +133,8 @@ function crear(etiqueta, atributos, ...hijos) {
     if (v === null || v === undefined || v === false) continue;
     if (k === 'clase') nodo.className = v;
     else if (k === 'datos') Object.assign(nodo.dataset, v);
+    // La política de contenido bloquea el atributo «style»: las medidas se ponen por propiedad.
+    else if (k === 'estilo') for (const propiedad in v) nodo.style.setProperty(propiedad, v[propiedad]);
     else nodo.setAttribute(k, v === true ? '' : v);
   }
   return agregar(nodo, hijos);
@@ -138,6 +205,14 @@ function primerParrafo(texto) {
   return punto > 40 ? corte.slice(0, punto + 1) : corte.replace(/\s+\S*$/, '') + '…';
 }
 function sumar(lista) { return lista.reduce((a, b) => a + b, 0); }
+// 2.8, o 12 cuando el decimal ya no dice nada.
+function unaCifra(n) { return fmt(n >= 10 ? Math.round(n) : Math.round(n * 10) / 10); }
+// «▲ 4» o «▼ 1»: la dirección va en el signo, no en el color.
+function conSigno(n) { return (n > 0 ? '▲ ' : '▼ ') + fmt(Math.abs(n)); }
+function fechaLocal(texto) {
+  const p = texto.split('-').map(Number);
+  return new Date(p[0], p[1] - 1, p[2]);
+}
 // «p. m.» ya termina en punto: no se escribe otro.
 function conPunto(texto) { return /\.$/.test(texto) ? texto : texto + '.'; }
 
@@ -206,6 +281,8 @@ function preparar(d) {
     diario: diario,
     registroDesde: registroDesde,
     nichos: d.nichos && Array.isArray(d.nichos.familias) ? d.nichos : null,
+    tendencias: d.tendencias && Array.isArray(d.tendencias.ref) && d.tendencias.leido ? d.tendencias : null,
+    cambios: (Array.isArray(d.cambios) ? d.cambios : []).filter((f) => Array.isArray(f) && f.length >= 4),
   };
 }
 
@@ -298,74 +375,264 @@ function seriesDeSubs(m, inicio) {
   });
 }
 
-/* ---------- Parte ---------- */
+/* ---------- Ahora: cuatro cifras, lo que se mueve y la meta ---------- */
 
-function tituloEntreComillas(v) {
-  // Un título que ya trae comillas angulares se cita con comillas inglesas.
-  const par = /[«»]/.test(v.titulo) ? ['“', '”'] : ['«', '»'];
-  return [par[0], enlaceExterno(v.url, v.titulo), par[1]];
-}
-function enlaceDeCanal(c) {
-  return enlaceExterno(c.url, c.nombre, { datos: { serie: c.clave } });
-}
-
-function pintarParte(m) {
-  const vivos = m.canales.filter((c) => !c.falta);
-  const sujeto = vivos.length === 3 ? 'los tres canales suman' : vivos.length === 1 ? 'el canal suma' : 'los canales suman';
-  const hora = laHora(m.ahora);
-  reemplazar($('#parte-lema'), [
-    'A ', hora, ', ', sujeto, ' ',
-    crear('a', { href: '#suscriptores' }, cuantos(sumar(vivos.map((c) => c.subs)), 'suscriptor', 'suscriptores')), ' y ',
-    crear('a', { href: '#vistas' }, cuantos(sumar(vivos.map((c) => c.vistas)), 'vista', 'vistas')), ' en ',
-    crear('a', { href: '#videos' }, cuantos(sumar(vivos.map((c) => c.total)), 'video', 'videos')), '.',
-  ]);
-
-  const frases = [];
-  const ultimo = m.videos.reduce((a, v) => (!a || v.publicado > a.publicado ? v : a), null);
-  if (ultimo) {
-    const edad = m.ahora - ultimo.publicado;
-    const canal = enlaceDeCanal(m.canales[ultimo.ci]);
-    if (edad < HORA) {
-      frases.push(['Lo último es ', tituloEntreComillas(ultimo), ', de ', canal, ': salió hace ', lapso(edad), ' y lleva ', cuantos(ultimo.vistas, 'vista', 'vistas'), '.']);
-    } else {
-      frases.push(['Lo último que salió es ', tituloEntreComillas(ultimo), ', de ', canal, ': ', cuantos(ultimo.vistas, 'vista', 'vistas'), ' en ', lapso(edad), '.']);
-    }
-  }
-
-  const entradas = sumar(Object.keys(m.h1).map((id) => Number(m.h1[id]) || 0));
-  const joven = m.bitacoraDesde > 0 && m.ahora - m.bitacoraDesde < HORA;
-  if (entradas > 0) {
-    const cuando = joven ? 'Desde ' + laHora(m.bitacoraDesde) : 'En la última hora';
-    const verbo = entradas === 1 ? ' entró ' : ' entraron ';
-    const primero = m.videos.filter((v) => m.h1[v.id] > 0).sort((a, b) => m.h1[b.id] - m.h1[a.id])[0];
-    const frase = [cuando, verbo, cuantos(entradas, 'vista', 'vistas')];
-    if (primero && m.h1[primero.id] === entradas) frase.push(entradas === 1 ? ', para ' : ', todas para ', tituloEntreComillas(primero));
-    else if (primero) frase.push('; ', fmt(m.h1[primero.id]), m.h1[primero.id] === 1 ? ' fue para ' : ' fueron para ', tituloEntreComillas(primero));
-    frase.push('.');
-    frases.push(frase);
-  } else if (m.bitacoraDesde > 0 && !joven) {
-    frases.push(['En la última hora no se movió ningún contador.']);
-  }
-
+function netosDeSubs(m) {
   const netos = [0, 0, 0];
   for (const f of m.cambiosSubs) if (netos[f[1]] !== undefined) netos[f[1]] += Number(f[2]) || 0;
-  const conCambio = m.canales.filter((c) => netos[c.ci] !== 0);
-  if (conCambio.length) {
-    const frase = [];
-    conCambio.forEach(function (c, i) {
-      if (i > 0) frase.push(i === conCambio.length - 1 ? ' y ' : ', ');
-      frase.push(enlaceDeCanal(c), netos[c.ci] > 0 ? ' ganó ' : ' perdió ', cuantos(Math.abs(netos[c.ci]), 'suscriptor', 'suscriptores'));
-    });
-    frase.push(' ', conPunto(ventanaDeUnDia(m)));
-    frases.push(frase);
-  }
+  return netos;
+}
 
-  const resto = $('#parte-resto');
-  resto.textContent = '';
-  frases.forEach(function (f, i) {
-    if (i > 0) resto.append(' ');
-    agregar(resto, f);
+// Suma de los suscriptores de los tres canales en cada momento en que alguno cambió.
+function totalDeSubs(m, inicio) {
+  const series = seriesDeSubs(m, inicio).filter((s) => s.puntos.length);
+  const tiempos = Array.from(new Set([].concat.apply([], series.map((s) => s.puntos.map((p) => p.t))))).sort((a, b) => a - b);
+  return tiempos.map(function (t) {
+    let v = 0;
+    for (const s of series) {
+      let ultimo = s.puntos[0].v;
+      for (const p of s.puntos) { if (p.t <= t) ultimo = p.v; else break; }
+      v += ultimo;
+    }
+    return { t: t, v: v };
   });
+}
+
+// Las trazas de las tarjetas no llevan ejes ni rótulos: dan la forma de la
+// serie y la cifra exacta está en la gráfica grande. Se estiran al ancho de
+// la tarjeta, por eso el trazo no escala con el dibujo.
+const TRAZA = { ancho: 168, alto: 40 };
+function lienzoDeTraza() {
+  return trazar('svg', { class: 'traza', viewBox: '0 0 ' + TRAZA.ancho + ' ' + TRAZA.alto, preserveAspectRatio: 'none', focusable: 'false' });
+}
+// Columnas: la última, que es el período en curso, va resaltada.
+function trazaDeColumnas(valores) {
+  const svg = lienzoDeTraza();
+  const hueco = TRAZA.ancho / valores.length;
+  const grosor = Math.min(14, hueco * 0.68);
+  const maximo = Math.max(1, Math.max.apply(null, valores));
+  valores.forEach(function (v, i) {
+    const h = v > 0 ? Math.max(2, (v / maximo) * (TRAZA.alto - 2)) : 1;
+    svg.append(trazar('rect', {
+      class: i === valores.length - 1 ? 'actual' : null,
+      x: (i * hueco + (hueco - grosor) / 2).toFixed(2), y: (TRAZA.alto - h).toFixed(2), width: grosor.toFixed(2), height: h.toFixed(2),
+    }));
+  });
+  return svg;
+}
+// Escalones de una serie [{t, v}] entre dos momentos.
+function trazaDeEscalones(puntos, inicio, fin) {
+  const svg = lienzoDeTraza();
+  if (!puntos.length || fin <= inicio) return svg;
+  const valores = puntos.map((p) => p.v);
+  const min = Math.min.apply(null, valores), max = Math.max.apply(null, valores);
+  const x = (t) => TRAZA.ancho * Math.max(0, (t - inicio) / (fin - inicio));
+  const y = (v) => (max === min ? TRAZA.alto / 2 : 3 + (TRAZA.alto - 6) * (1 - (v - min) / (max - min)));
+  let d = 'M' + x(puntos[0].t).toFixed(1) + ',' + y(puntos[0].v).toFixed(1);
+  for (let k = 1; k < puntos.length; k++) d += 'H' + x(puntos[k].t).toFixed(1) + 'V' + y(puntos[k].v).toFixed(1);
+  svg.append(trazar('path', { class: 'linea', d: d + 'H' + TRAZA.ancho }));
+  return svg;
+}
+// Una barra frente a una marca: el valor de ahora y su referencia.
+function trazaDeComparacion(valor, referencia) {
+  const svg = lienzoDeTraza();
+  const tope = Math.max(valor, referencia * 2, 1);
+  const y = TRAZA.alto / 2 - 4;
+  svg.append(trazar('rect', { class: 'pista', x: 0, y: y, width: TRAZA.ancho, height: 8 }));
+  if (valor > 0) svg.append(trazar('rect', { class: 'actual', x: 0, y: y, width: Math.max(2, (valor / tope) * TRAZA.ancho).toFixed(2), height: 8 }));
+  if (referencia > 0) {
+    const x = ((referencia / tope) * TRAZA.ancho).toFixed(2);
+    svg.append(trazar('line', { class: 'marca', x1: x, x2: x, y1: y - 7, y2: y + 15 }));
+  }
+  return svg;
+}
+
+// Barra fina partida por canal. Las cifras de cada parte están en el bloque
+// de su canal, justo debajo; aquí van en el rótulo accesible y al pasar el cursor.
+function pintarReparto(nodo, valores, de) {
+  const total = sumar(valores);
+  nodo.hidden = total <= 0;
+  if (total <= 0) { nodo.textContent = ''; return; }
+  nodo.setAttribute('aria-label', 'Reparto de ' + de + ' por canal: ' + CANALES.map((c, ci) => c.nombre + ', ' + fmt(valores[ci])).join('; ') + '.');
+  reemplazar(nodo, CANALES.map(function (c, ci) {
+    if (valores[ci] <= 0) return null;
+    return crear('span', {
+      datos: { serie: c.clave }, title: c.nombre + ': ' + fmt(valores[ci]) + ' (' + Math.round(100 * valores[ci] / total) + ' %)',
+      estilo: { 'flex-grow': String(valores[ci]) },
+    });
+  }));
+}
+
+function ponerTarjeta(id, t) {
+  const tarjeta = $('#' + id);
+  const campo = (nombre) => $('[data-campo="' + nombre + '"]', tarjeta);
+  ponerCifra(campo('valor'), t.valor);
+  campo('valor').setAttribute('aria-label', fmt(t.valor) + ' ' + t.de);
+  reemplazar(campo('delta'), t.delta);
+  reemplazar(campo('traza'), [t.traza]);
+  campo('pie').textContent = t.pie;
+  pintarReparto(campo('reparto'), t.reparto, t.de);
+}
+
+function pintarCifras(m) {
+  const vivos = m.canales.filter((c) => !c.falta);
+  const ventana = ventanaDeUnDia(m);
+  const horas = cubosDeVistas(m, '24h');
+  const dias = cubosDeVistas(m, '7d');
+  const porHora = horas.map((c) => sumar(c.valores));
+  const total24 = sumar(porHora);
+
+  const neto = sumar(netosDeSubs(m));
+  const inicio7 = m.ahora - 7 * DIA;
+  const serie = totalDeSubs(m, inicio7);
+  const desde = serie.length ? Math.max(inicio7, serie[0].t) : inicio7;
+  ponerTarjeta('cifra-subs', {
+    valor: sumar(vivos.map((c) => c.subs)), de: 'suscriptores',
+    delta: !m.bitacoraDesde ? [] : neto ? [crear('strong', null, conSigno(neto)), ' ' + ventana] : ['Sin cambio ' + ventana],
+    traza: trazaDeEscalones(serie, desde, m.ahora),
+    pie: serie.length < 2 ? '' : desde > inicio7 + HORA ? 'Desde el ' + diaYMes.format(desde) : 'Últimos 7 días',
+    reparto: m.canales.map((c) => (c.falta ? 0 : c.subs)),
+  });
+
+  ponerTarjeta('cifra-vistas', {
+    valor: sumar(vivos.map((c) => c.vistas)), de: 'vistas',
+    delta: !m.bitacoraDesde ? [] : total24 ? [crear('strong', null, conSigno(total24)), ' ' + ventana] : ['Sin vistas nuevas ' + ventana],
+    traza: trazaDeColumnas(porHora),
+    pie: 'Por hora, últimas 24 horas',
+    reparto: m.canales.map((c) => (c.falta ? 0 : c.vistas)),
+  });
+
+  // La última hora va contra el promedio por hora del día. Con menos de seis
+  // horas de registro el promedio todavía no dice nada.
+  const deCanal = {};
+  for (const v of m.videos) deCanal[v.id] = v.ci;
+  for (const id in m.diario) if (deCanal[id] === undefined) deCanal[id] = m.diario[id].ci;
+  const ultima = [0, 0, 0];
+  for (const id in m.h1) if (ultima[deCanal[id]] !== undefined) ultima[deCanal[id]] += Number(m.h1[id]) || 0;
+  const entradas = sumar(ultima);
+  const promedio = total24 / 24;
+  const conPromedio = total24 > 0 && m.bitacoraDesde > 0 && m.ahora - m.bitacoraDesde >= 6 * HORA;
+  let comparacion = [];
+  if (conPromedio) {
+    const razon = entradas / promedio;
+    comparacion = razon >= 1.15 ? [crear('strong', null, '▲ ' + unaCifra(razon) + ' veces'), ' el promedio del día']
+      : razon <= 0.85 ? [crear('strong', null, '▼ ' + fmt(Math.round(razon * 100)) + ' %'), ' del promedio del día']
+        : ['En el promedio del día'];
+  }
+  ponerTarjeta('cifra-hora', {
+    valor: entradas, de: 'vistas en la última hora',
+    delta: comparacion,
+    traza: trazaDeComparacion(entradas, conPromedio ? promedio : 0),
+    pie: conPromedio ? 'La marca es el promedio: ' + fmt(Math.round(promedio)) + ' por hora' : '',
+    reparto: ultima,
+  });
+
+  const hoy = dias[dias.length - 1], ayer = dias[dias.length - 2];
+  const conAyer = isFinite(m.registroDesde) && m.registroDesde < ayer.fin;
+  ponerTarjeta('cifra-hoy', {
+    valor: sumar(hoy.valores), de: 'vistas de hoy',
+    delta: conAyer ? ['Ayer, ', crear('strong', null, fmt(sumar(ayer.valores))), ' en el día'] : [],
+    traza: trazaDeColumnas(dias.map((c) => sumar(c.valores))),
+    pie: 'Por día, últimos 7 días',
+    reparto: hoy.valores,
+  });
+}
+
+// Los cinco videos propios que más vistas ganaron en la última hora o, si
+// ninguno se movió, en las últimas 24.
+function pintarMueve(m) {
+  const porHora = m.videos.some((v) => m.h1[v.id] > 0);
+  const medida = (v) => Number((porHora ? m.h1 : m.h24)[v.id]) || 0;
+  const lista = m.videos.filter((v) => medida(v) > 0).sort((a, b) => medida(b) - medida(a) || b.publicado - a.publicado).slice(0, 5);
+  const ventana = ventanaDeUnDia(m);
+  $('#mueve-nota').textContent = lista.length
+    ? (porHora ? 'Vistas ganadas en la última hora.' : conPunto('En la última hora no se movió ningún contador: van las vistas ganadas ' + ventana))
+    : (m.bitacoraDesde ? conPunto('Ningún contador se movió ' + ventana) : '');
+  const tope = lista.length ? medida(lista[0]) : 1;
+  reemplazar($('#mueve-lista'), lista.map(function (v) {
+    const c = m.canales[v.ci];
+    const enElDia = porHora && m.h24[v.id] > 0 ? fmt(m.h24[v.id]) + ' en 24 horas' : fmt(v.vistas) + ' en total';
+    return crear('li', { datos: { serie: c.clave } },
+      miniatura(v, 'mini', 'mqdefault'),
+      crear('div', { clase: 'mueve-texto' },
+        enlaceExterno(v.url, v.titulo, { clase: 'video-titulo' }),
+        crear('span', { clase: 'video-dato' }, crear('span', { clase: 'clave' }), c.nombre + ' · ' + (v.corto ? 'Short' : 'Video') + ' · ' + publicadoHace(m, v))),
+      crear('div', { clase: 'mueve-cifra' },
+        crear('strong', null, '+' + fmt(medida(v))),
+        crear('span', { clase: 'barra', 'aria-hidden': 'true' }, crear('span', { estilo: { width: Math.max(3, Math.round(100 * medida(v) / tope)) + '%' } })),
+        crear('span', { clase: 'tenue' }, enElDia)));
+  }));
+}
+
+// Suscriptores de cada canal frente a la meta. La fecha estimada es una
+// proyección del ritmo registrado y solo aparece con tres días de historia.
+function pintarMeta(m) {
+  const netos = netosDeSubs(m);
+  const ventana = ventanaDeUnDia(m);
+  $('#meta-nota').textContent = 'El Programa de socios de YouTube pide ' + fmt(META_SUBS) + ' suscriptores. También pide horas de reproducción, que no son públicas.';
+  reemplazar($('#meta-lista'), m.canales.map(function (c) {
+    if (c.falta) return null;
+    const filas = m.historia.filter((f) => f[1] === c.ci).sort((a, b) => a[0] - b[0]);
+    let ritmo = '';
+    if (filas.length && c.subs < META_SUBS) {
+      const dias = (m.ahora - filas[0][0]) / DIA;
+      const ganados = c.subs - Number(filas[0][2]);
+      if (dias >= 3 && ganados > 0) {
+        const porDia = ganados / dias;
+        ritmo = 'Al ritmo registrado desde el ' + diaYMes.format(filas[0][0]) + ' (' + unaCifra(porDia) + ' por día), llegaría el ' + fechaNumerica.format(m.ahora + ((META_SUBS - c.subs) / porDia) * DIA) + '.';
+      }
+    }
+    const pct = Math.min(100, (100 * c.subs) / META_SUBS);
+    return crear('li', { datos: { serie: c.clave } },
+      crear('div', { clase: 'meta-fila' },
+        crear('span', { clase: 'meta-nombre' }, crear('span', { clase: 'clave' }), enlaceExterno(c.url, c.nombre)),
+        crear('span', { clase: 'meta-cifra' }, crear('strong', null, fmt(c.subs)), ' de ' + fmt(META_SUBS))),
+      crear('div', { clase: 'medidor', role: 'img', 'aria-label': c.nombre + ': ' + fmt(c.subs) + ' de ' + fmt(META_SUBS) + ' suscriptores' },
+        crear('span', { estilo: { width: Math.max(0.8, pct).toFixed(1) + '%' } })),
+      crear('p', { clase: 'meta-ritmo' },
+        unaCifra(pct) + ' % de la meta',
+        netos[c.ci] ? ' · ' + conSigno(netos[c.ci]) + ' ' + ventana : '',
+        ritmo ? '. ' + ritmo : ''));
+  }));
+}
+
+// «a las 14 horas», «a los 3 días».
+function alCabo(ms) {
+  const horas = Math.max(1, Math.round(ms / HORA));
+  if (horas < 48) return horas === 1 ? 'a la hora' : 'a las ' + horas + ' horas';
+  return 'a los ' + Math.round(ms / DIA) + ' días';
+}
+
+// Señales: lo que conviene mirar ya. Un video propio que en la última hora
+// triplicó su promedio del día, y un video de un canal de referencia que pasó
+// de 1.6 veces la mediana de su canal (el umbral del estudio de reenfoque).
+function pintarSenales(m) {
+  const senales = [];
+  for (const v of m.videos) {
+    const h1 = Number(m.h1[v.id]) || 0, resto = (Number(m.h24[v.id]) || 0) - h1;
+    if (h1 < 20 || m.ahora - m.bitacoraDesde < 6 * HORA) continue;
+    if (resto <= 0) senales.push({ peso: h1, nodo: [enlaceExterno(v.url, v.titulo), ' sumó ' + fmt(h1) + ' vistas en la última hora, las únicas del día.'] });
+    else if (h1 >= 3 * (resto / 23)) senales.push({ peso: h1, nodo: [enlaceExterno(v.url, v.titulo), ' sumó ' + fmt(h1) + ' vistas en la última hora, ' + unaCifra(h1 / (resto / 23)) + ' veces su promedio del día.'] });
+  }
+  const propias = senales.sort((a, b) => b.peso - a.peso).slice(0, 2);
+  const ajenas = [];
+  for (const v of m.tendencias ? m.tendencias.ref : []) {
+    if (!(v.med > 0) || v.n < 1.6 * v.med) continue;
+    ajenas.push({ peso: v.n / v.med, nodo: [
+      enlaceExterno('https://www.youtube.com/watch?v=' + encodeURIComponent(v.id), v.t), ', de ' + v.c + ', va ' + unaCifra(v.n / v.med) + ' veces sobre la mediana de su canal ' + alCabo(m.ahora - v.p) + ' de publicado. ',
+      crear('a', { href: '#tendencias' }, 'Ver tendencias'),
+    ] });
+  }
+  const lista = propias.concat(ajenas.sort((a, b) => b.peso - a.peso).slice(0, 3));
+  $('#senales').hidden = lista.length === 0;
+  reemplazar($('#senales-lista'), lista.map((s) => crear('li', null, s.nodo)));
+}
+
+function pintarAhora(m) {
+  pintarCifras(m);
+  pintarMueve(m);
+  pintarMeta(m);
+  pintarSenales(m);
 }
 
 /* ---------- Tríptico de canales ---------- */
@@ -626,6 +893,19 @@ function graficaColumnas(lienzo, cubos, cfg) {
       trazar('text', { class: 'anotacion', x: x + (aLaDerecha ? 6 : -6), y: 14, 'text-anchor': aLaDerecha ? 'start' : 'end' }, 'Empieza el registro'));
   }
 
+  // Un rombo sobre la columna en la que cambió un título o una miniatura.
+  const rombos = {};
+  for (const marca of cfg.marcas || []) {
+    if (marca.t < cubos[0].t || marca.t >= cubos[cubos.length - 1].fin) continue;
+    let i = cubos.length - 1;
+    while (i > 0 && cubos[i].t > marca.t) i--;
+    (rombos[i] = rombos[i] || []).push(marca.texto);
+  }
+  for (const i in rombos) {
+    const x = centro(Number(i)), y = margen.arr - 16;
+    raiz.append(trazar('path', { class: 'rombo', d: 'M' + x + ',' + (y - 5) + 'l5,5l-5,5l-5,-5z' }));
+  }
+
   const globo = globoDe(lienzo);
   globo.hidden = true;
   interaccion(raiz, lienzo, {
@@ -639,6 +919,7 @@ function graficaColumnas(lienzo, cubos, cfg) {
       const lista = crear('ul');
       CANALES.forEach(function (canal, ci) { lista.append(filaDeGlobo(canal.clave, fmt(cubos[i].valores[ci]), canal.nombre)); });
       lista.append(filaDeGlobo('', fmt(totales[i]), 'Total'));
+      for (const texto of rombos[i] || []) lista.append(crear('li', { clase: 'nota' }, texto));
       reemplazar(globo, [crear('p', { clase: 'globo-titulo' }, cfg.titulo(cubos[i])), lista]);
       colocarGlobo(lienzo, globo, centro(i) * (lienzo.clientWidth / ancho), hueco);
     },
@@ -801,7 +1082,10 @@ function pintarTablero(m) {
   // Vistas ganadas
   const totalPorCanal = CANALES.map((c, ci) => sumar(cubos.map((cubo) => cubo.valores[ci])));
   const total = sumar(totalPorCanal);
-  $('#vistas-nota').textContent = total > 0 ? cuantos(total, 'vista', 'vistas') + ' en ' + periodo.nombre + ', por ' + periodo.unidad + '.' : '';
+  const marcas = cambiosDe(m).map((c) => ({ t: c.t, texto: (c.tipo === 'titulo' ? 'Cambio de título: ' : 'Cambio de miniatura: ') + c.video.titulo }));
+  const conMarca = marcas.some((x) => x.t >= inicio);
+  $('#vistas-nota').textContent = (total > 0 ? cuantos(total, 'vista', 'vistas') + ' en ' + periodo.nombre + ', por ' + periodo.unidad + '.' : '')
+    + (conMarca ? ' El rombo marca un cambio de título o de miniatura.' : '');
   reemplazar($('#vistas-leyenda'), m.canales.map((c) => itemDeLeyenda(c, '', fmt(totalPorCanal[c.ci]))));
   const rotuloLargo = function (c) {
     if (!porHoras) return diaCompleto.format(c.t);
@@ -810,6 +1094,7 @@ function pintarTablero(m) {
   graficaColumnas($('#vistas-lienzo'), cubos, {
     descripcion: 'Vistas ganadas por ' + periodo.unidad + ' y canal en ' + periodo.nombre + '. Con las flechas se recorre cada ' + periodo.unidad + '; la tabla tiene las mismas cifras.',
     desde: desde,
+    marcas: marcas,
     vacio: 'Sin vistas registradas en este período.',
     titulo: rotuloLargo,
     rotulo: (c) => (porHoras ? horaSola.format(c.t) : clave === '7d' ? diaDeSemana.format(c.t).replace(',', '') : diaYMes.format(c.t)),
@@ -866,8 +1151,33 @@ function publicadoHace(m, v) {
   return edad < 7 * DIA ? 'hace ' + lapso(edad) : fechaNumerica.format(v.publicado);
 }
 
+// Un largo frente a la mediana de su familia de temas. Se compara a los 7
+// días de publicado; antes de eso, con las vistas que lleva.
+function frenteASuFamilia(m, v) {
+  if (v.corto) return null;
+  const familia = (FAMILIAS[v.ci] || []).find((f) => f.patron.test(v.titulo));
+  if (!familia) return null;
+  const edad = m.ahora - v.publicado;
+  const aLosDias = (n) => (n === 1 ? 'a 1 día' : 'a los ' + n + ' días');
+  let vistas = v.vistas, cuando = edad < DIA ? 'en su primer día' : aLosDias(Math.floor(edad / DIA));
+  if (edad >= 7 * DIA) {
+    cuando = 'a los 7 días';
+    const s = m.diario[v.id];
+    // La lectura diaria más cercana al séptimo día; sin ella, las vistas de hoy.
+    let cerca = null;
+    for (const p of s ? s.puntos : []) if (p.t <= v.publicado + 7.5 * DIA) cerca = p;
+    if (cerca && cerca.t >= v.publicado + 6 * DIA) vistas = cerca.v;
+    else cuando = aLosDias(Math.floor(edad / DIA));
+  }
+  const pct = (100 * vistas) / familia.mediana;
+  return crear('span', { clase: 'video-dato video-familia' },
+    crear('span', { clase: 'medidor-mini', 'aria-hidden': 'true' }, crear('span', { estilo: { width: Math.max(2, Math.min(100, pct)).toFixed(1) + '%' } })),
+    'Familia «' + familia.nombre + '»: ' + fmt(vistas) + ' de ' + fmt(familia.mediana) + ' (' + (pct < 1 ? 'menos del 1' : fmt(Math.round(pct))) + ' %) ' + cuando);
+}
+
 function pintarVideos(m, inicio) {
   const periodo = PERIODOS[estado.periodo];
+  const cambios = cambiosDe(m);
   const lista = m.videos
     .filter((v) => estado.canal === '' || v.ci === Number(estado.canal))
     .filter((v) => estado.tipo === '' || (estado.tipo === 'short') === v.corto);
@@ -891,7 +1201,9 @@ function pintarVideos(m, inicio) {
         miniatura(v, 'mini', 'mqdefault'),
         crear('div', { clase: 'video-texto' },
           enlaceExterno(v.url, v.titulo, { clase: 'video-titulo', datos: { foco: 't' + v.id } }),
-          crear('span', { clase: 'video-dato' }, dato), ahora))),
+          crear('span', { clase: 'video-dato' }, dato), ahora,
+          frenteASuFamilia(m, v),
+          cambios.filter((x) => x.id === v.id).map((x) => crear('span', { clase: 'video-dato video-cambio' }, fraseDeCambio(m, x)))))),
       crear('td', { clase: 'solo-ancho' }, enlaceExterno(c.url, [c.logo ? crear('img', { src: c.logo, alt: '', width: 24, height: 24, loading: 'lazy' }) : null, c.nombre], { clase: 'celda-canal', datos: { foco: 'c' + v.id } })),
       crear('td', { clase: 'solo-ancho' }, crear('time', { datetime: new Date(v.publicado).toISOString(), title: fechaConHora.format(v.publicado) }, publicadoHace(m, v))),
       crear('td', { clase: 'num', datos: { etiqueta: 'vistas' } }, dueno ? enlaceExterno(estudio + 'analytics/tab-overview/period-default', fmt(v.vistas), { datos: { foco: 'v' + v.id } }) : fmt(v.vistas)),
@@ -910,7 +1222,8 @@ function pintarVideos(m, inicio) {
   $('#quitar-filtros').hidden = !conFiltro;
   $('#tabla-videos').hidden = lista.length === 0;
   const recortado = m.canales.some((c) => c.total > m.videos.filter((v) => v.ci === c.ci).length);
-  $('#videos-nota').textContent = lista.length === 0 && !conFiltro ? '' : cuantos(lista.length, 'video', 'videos') + (recortado ? ', de los 15 más recientes de cada canal.' : '.');
+  $('#videos-nota').textContent = lista.length === 0 && !conFiltro ? '' : cuantos(lista.length, 'video', 'videos') + (recortado ? ', de los 15 más recientes de cada canal.' : '.')
+    + (lista.some((v) => !v.corto) ? ' Cada largo se compara con la mediana de vistas de su familia de temas, medida el ' + FAMILIAS_FECHA + '; la familia se asigna por las palabras del título.' : '');
   $('#orden-periodo').textContent = 'Más vistas en ' + periodo.nombre;
 
   for (const th of document.querySelectorAll('#tabla-videos th')) {
@@ -934,12 +1247,244 @@ function pintar() {
   if (!m) return;
   // Antes de dibujar: una gráfica en un contenedor oculto mide 0 de ancho.
   $('#datos').hidden = false;
-  pintarParte(m);
+  $('#radar').hidden = false;
   pintarCanales(m);
   pintarDatos();
-  // La sección de nichos es independiente: si falla, el resto de la página queda dibujado.
+  // Cada sección que sigue es independiente: si una falla, el resto de la página queda dibujado.
+  try { pintarAhora(m); } catch (error) { console.error('ahora: ' + error); }
+  try { pintarTendencias(m); } catch (error) { console.error('tendencias: ' + error); $('#tendencias').hidden = true; }
   try { pintarNichos(m); } catch (error) { console.error('nichos: ' + error); $('#nichos').hidden = true; }
+  try { pintarCalendario(m); } catch (error) { console.error('calendario: ' + error); $('#calendario').hidden = true; }
 }
+/* ---------- Cambios de título y de miniatura ---------- */
+
+// Los de título los anota Atalaya Vigía; los de miniatura, la tarea del
+// repositorio, que compara la imagen cada hora.
+function cambiosDe(m) {
+  const lista = m.cambios.map((f) => ({ t: f[0], id: f[2], tipo: f[3], despues: f[5] || '' }));
+  const externos = estado.externos && Array.isArray(estado.externos.cambios) ? estado.externos.cambios : [];
+  for (const f of externos) if (Array.isArray(f) && f.length >= 3) lista.push({ t: f[0], id: f[1], tipo: f[2], despues: '' });
+  const propios = {};
+  for (const v of m.videos) propios[v.id] = v;
+  return lista.filter((c) => propios[c.id] && c.t > m.ahora - 30 * DIA).sort((a, b) => a.t - b.t)
+    .map((c) => Object.assign(c, { video: propios[c.id] }));
+}
+
+// Vistas por día de un video antes y después de un momento, con la lectura
+// diaria. Entre dos lecturas se reparte parejo, así que es una aproximación.
+function ritmoAlrededor(m, v, t) {
+  const s = m.diario[v.id];
+  if (!s) return null;
+  const serie = s.puntos.concat([{ t: m.ahora, v: v.vistas }]);
+  const en = function (x) {
+    if (x <= serie[0].t) return null;
+    for (let k = 1; k < serie.length; k++) {
+      if (x <= serie[k].t) return serie[k - 1].v + (serie[k].v - serie[k - 1].v) * ((x - serie[k - 1].t) / (serie[k].t - serie[k - 1].t));
+    }
+    return serie[serie.length - 1].v;
+  };
+  const alCambio = en(t);
+  if (alCambio === null) return null;
+  const inicio = Math.max(serie[0].t, t - 2 * DIA);
+  const antes = t - inicio >= DIA / 2 ? (alCambio - (en(inicio) === null ? serie[0].v : en(inicio))) / ((t - inicio) / DIA) : null;
+  const despues = m.ahora - t >= DIA ? (v.vistas - alCambio) / ((m.ahora - t) / DIA) : null;
+  return { antes: antes, despues: despues };
+}
+
+function fraseDeCambio(m, c) {
+  const que = c.tipo === 'titulo' ? 'Título cambiado ' : 'Miniatura cambiada ';
+  const r = ritmoAlrededor(m, c.video, c.t);
+  let ritmo = '';
+  if (r && r.antes !== null && r.despues !== null) ritmo = ': antes, ' + fmt(Math.round(r.antes)) + ' vistas por día; después, ' + fmt(Math.round(r.despues));
+  else if (r && r.despues === null) ritmo = ': la comparación sale al cumplirse un día';
+  const cuando = new Date(c.t).toDateString() === new Date(m.ahora).toDateString() ? 'hoy a ' + laHora(c.t) : 'el ' + fechaNumerica.format(c.t) + ' a ' + laHora(c.t);
+  return conPunto(que + cuando + ritmo);
+}
+
+/* ---------- Tendencias: lo que se mueve fuera de los tres canales ---------- */
+
+function videoAjeno(v) {
+  const corto = v.s > 0 && v.s <= 180;
+  return { id: v.id, corto: corto, url: (corto ? 'https://www.youtube.com/shorts/' : 'https://www.youtube.com/watch?v=') + encodeURIComponent(v.id) };
+}
+// Vistas que el video sumó en una hora, con sus dos últimas lecturas.
+function porHoraDe(v) {
+  if (v.a === undefined || !(v.m >= 20)) return null;
+  return Math.max(0, Math.round(((v.n - v.a) * 60) / v.m));
+}
+function segmentos(nombre, opciones, actual) {
+  return crear('div', { clase: 'segmentos', datos: { n: String(opciones.length) } }, opciones.map((o) => crear('label', null,
+    crear('input', { type: 'radio', name: nombre, value: o[0], checked: o[0] === actual }), crear('span', null, o[1]))));
+}
+function filtroDe(rotulo, nombre, opciones, actual) {
+  return crear('fieldset', { clase: 'filtro' }, crear('legend', null, rotulo), segmentos(nombre, opciones, actual));
+}
+
+function filaDeVideoAjeno(m, v, puesto, tope, extra) {
+  const a = videoAjeno(v);
+  const ph = porHoraDe(v);
+  const dato = [v.c];
+  if (v.k && CATEGORIAS[v.k] && !extra) dato.push(CATEGORIAS[v.k]);
+  if (v.p) dato.push('hace ' + lapso(m.ahora - v.p));
+  if (v.s) dato.push(a.corto ? 'Short' : duracion(v.s));
+  return crear('li', null,
+    puesto ? crear('span', { clase: 'puesto', 'aria-hidden': 'true' }, String(puesto)) : null,
+    miniatura(a, 'mini', 'mqdefault'),
+    crear('div', { clase: 'tend-texto' },
+      enlaceExterno(a.url, v.t, { clase: 'video-titulo' }),
+      crear('span', { clase: 'video-dato' }, dato.join(' · '))),
+    crear('div', { clase: 'tend-cifra' },
+      crear('span', null, crear('strong', null, fmt(v.n)), crear('span', { clase: 'tenue' }, v.n === 1 ? ' vista' : ' vistas')),
+      extra || crear('span', { clase: 'barra', 'aria-hidden': 'true' }, crear('span', { estilo: { width: Math.max(2, Math.round((100 * v.n) / tope)) + '%' } })),
+      ph ? crear('span', { clase: 'video-ahora' }, '+' + fmt(ph) + ' en la última hora') : null));
+}
+
+function panelDeReferencia(m, t) {
+  const filas = t.ref.map((v) => ({ v: v, razon: v.med > 0 ? v.n / v.med : 0 })).sort((a, b) => b.razon - a.razon);
+  if (!filas.length) return [crear('p', { clase: 'vacio' }, 'Los canales de referencia no publicaron videos largos en los últimos 10 días.')];
+  // La barra llega a 3 veces la mediana; la raya marca 1 vez.
+  const tope = 3;
+  const lista = crear('ol', { clase: 'tend-lista' }, filas.map(function (f) {
+    const pasa = f.razon >= 1.6;
+    const frente = f.razon >= 1 ? unaCifra(f.razon) + (f.razon === 1 ? ' vez' : ' veces') + ' la mediana' : fmt(Math.round(f.razon * 100)) + ' % de la mediana';
+    return filaDeVideoAjeno(m, f.v, 0, 1, crear('span', { clase: 'frente' + (pasa ? ' pasa' : '') },
+      crear('span', { clase: 'medidor-razon', 'aria-hidden': 'true' }, crear('span', { estilo: { width: Math.max(1.5, Math.min(100, (100 * f.razon) / tope)).toFixed(1) + '%' } })),
+      (pasa ? '▲ ' : '') + frente + ' de su canal (' + fmt(f.v.med) + ')'));
+  }));
+  const canales = t.canales.slice().sort((a, b) => b.subs - a.subs);
+  return [lista, crear('p', { clase: 'tend-pie' },
+    cuantos(canales.length, 'canal', 'canales') + ': ',
+    canales.map((c, i) => [i ? ', ' : '', enlaceExterno('https://www.youtube.com/channel/' + encodeURIComponent(c.id), c.nombre), ' (' + fmt(c.subs) + ')']), '.')];
+}
+
+function panelDeYouTube(m, t) {
+  const vistos = {};
+  let lista = t.viral.concat(t.largos).filter(function (v) {
+    if (vistos[v.id]) return false;
+    vistos[v.id] = true;
+    return true;
+  });
+  if (estado.tendFormato === 'largo') lista = lista.filter((v) => v.s > 180);
+  if (estado.tendFormato === 'short') lista = lista.filter((v) => v.s <= 180);
+  if (estado.tendSin) lista = lista.filter((v) => v.k !== '10' && v.k !== '20');
+  lista.sort((a, b) => b.n - a.n);
+  lista = lista.slice(0, 30);
+  if (!lista.length) return [crear('p', { clase: 'vacio' }, 'Sin videos con ese filtro.')];
+  const tope = lista[0].n || 1;
+  return [crear('ol', { clase: 'tend-lista' }, lista.map((v, i) => filaDeVideoAjeno(m, v, i + 1, tope, null)))];
+}
+
+function panelDeGoogle(m) {
+  const g = estado.externos && estado.externos.google ? estado.externos.google[estado.pais] : null;
+  if (!g || !Array.isArray(g.t) || !g.t.length) return [crear('p', { clase: 'vacio' }, 'Todavía no hay lectura de Google Trends para este país.')];
+  return [crear('ol', { clase: 'tend-lista google' }, g.t.map(function (b, i) {
+    return crear('li', null,
+      crear('span', { clase: 'puesto', 'aria-hidden': 'true' }, String(i + 1)),
+      crear('div', { clase: 'tend-texto' },
+        crear('span', { clase: 'video-titulo' }, b.q),
+        b.nt ? crear('span', { clase: 'video-dato' }, b.nu ? enlaceExterno(b.nu, b.nt) : b.nt, b.nf ? ' · ' + b.nf : '') : null),
+      crear('div', { clase: 'tend-cifra' },
+        b.n ? crear('span', null, crear('strong', null, b.n), crear('span', { clase: 'tenue' }, ' búsquedas')) : null,
+        b.p ? crear('span', { clase: 'tenue' }, 'hace ' + lapso(Math.max(60000, m.ahora - b.p))) : null,
+        enlaceExterno('https://www.youtube.com/results?search_query=' + encodeURIComponent(b.q), 'Buscar en YouTube', { clase: 'video-ahora' })));
+  }))];
+}
+
+function panelOficial(m, t) {
+  const lista = (t.oficial[estado.pais] || []).slice().sort((a, b) => b.n - a.n);
+  if (!lista.length) return [crear('p', { clase: 'vacio' }, 'YouTube no devolvió la lista de este país en la última lectura.')];
+  const tope = lista[0].n || 1;
+  return [crear('ol', { clase: 'tend-lista' }, lista.map((v, i) => filaDeVideoAjeno(m, v, i + 1, tope, null)))];
+}
+
+function pintarTendencias(m, forzar) {
+  const t = m.tendencias;
+  const externos = estado.externos;
+  const hayGoogle = !!(externos && externos.google);
+  if (!t && !hayGoogle) { $('#tendencias').hidden = true; return; }
+  $('#tendencias').hidden = false;
+  if (!t && estado.tend !== 'google') { estado.tend = 'google'; marcar('tend', 'google'); }
+  // La sección solo se rehace cuando cambia la lectura o un filtro: así no se
+  // pierde el lugar ni el foco con la lectura de cada minuto.
+  const firma = [estado.tend, estado.tendFormato, estado.tendSin, estado.pais, t ? t.leido : 0, externos ? externos.leido : 0].join('|');
+  if (!forzar && firma === estado.firmaTend) return;
+  estado.firmaTend = firma;
+
+  const leido = estado.tend === 'google' ? (externos ? externos.leido : 0) : (t ? t.leido : 0);
+  const notas = {
+    ref: 'Videos largos que los canales de referencia publicaron en los últimos 10 días, frente a la mediana de vistas de su propio canal. Desde 1.6 veces, el video despega.',
+    yt: 'Lo más visto en YouTube entre lo publicado en las últimas 24 horas (48 en los largos), en español y sin transmisiones en vivo. El idioma se deduce del título cuando el video no lo declara.',
+    google: 'Las búsquedas que más crecen en Google en cada país, según su RSS público. Mide Google, no YouTube: el enlace lleva a lo que YouTube tiene sobre cada una.',
+    oficial: 'La lista oficial de YouTube por país. Desde julio de 2025 solo trae música, tráileres y videojuegos.',
+  };
+  $('#tend-nota').textContent = notas[estado.tend] + (leido ? ' ' + conPunto('Se lee cada hora; última lectura, ' + fechaConHora.format(leido)) : '');
+
+  const barra = [];
+  if (estado.tend === 'yt') {
+    barra.push(filtroDe('Formato', 'tend-formato', [['', 'Todos'], ['largo', 'Largos'], ['short', 'Shorts']], estado.tendFormato));
+    barra.push(filtroDe('Categorías', 'tend-sin', [['', 'Todas'], ['1', 'Sin música ni videojuegos']], estado.tendSin));
+  }
+  if (estado.tend === 'google' || estado.tend === 'oficial') barra.push(filtroDe('País', 'tend-pais', PAISES, estado.pais));
+  reemplazar($('#tend-barra'), barra);
+
+  let cuerpo;
+  if (estado.tend === 'google') cuerpo = panelDeGoogle(m);
+  else if (!t) cuerpo = [crear('p', { clase: 'vacio' }, 'Todavía no hay lectura de tendencias.')];
+  else if (estado.tend === 'yt') cuerpo = panelDeYouTube(m, t);
+  else if (estado.tend === 'oficial') cuerpo = panelOficial(m, t);
+  else cuerpo = panelDeReferencia(m, t);
+  reemplazar($('#tend-cuerpo'), cuerpo);
+}
+
+/* ---------- Calendario ---------- */
+
+function pintarCalendario(m) {
+  const hoy = new Date(m.ahora);
+  hoy.setHours(0, 0, 0, 0);
+  const filas = CALENDARIO.map((e) => ({ e: e, inicio: fechaLocal(e.dia), fin: fechaLocal(e.hasta || e.dia) }))
+    .filter((f) => f.fin >= hoy).sort((a, b) => a.inicio - b.inicio || a.fin - b.fin);
+  $('#calendario').hidden = filas.length === 0;
+  if (!filas.length) return;
+  $('#cal-nota').textContent = 'Fechas que mueven búsquedas en los temas de los canales. La demanda es la mediana de vistas de los 15 primeros resultados de la búsqueda de YouTube, medida el ' + FAMILIAS_FECHA + '.';
+  const tope = Math.max.apply(null, filas.map((f) => f.e.demanda)) || 1;
+  const conAno = (d) => (d.getFullYear() === hoy.getFullYear() ? diaYMes.format(d) : diaYMes.format(d) + ' ' + d.getFullYear());
+  reemplazar($('#cal-lista'), filas.map(function (f) {
+    const c = CANALES[f.e.ci];
+    const faltan = Math.round((f.inicio - hoy) / DIA);
+    const cuando = faltan > 1 ? 'faltan ' + faltan + ' días' : faltan === 1 ? 'mañana' : faltan === 0 ? 'hoy' : 'en curso';
+    const mismoMes = f.inicio.getMonth() === f.fin.getMonth() && f.inicio.getFullYear() === f.fin.getFullYear();
+    const fecha = f.fin > f.inicio ? (mismoMes ? f.inicio.getDate() : conAno(f.inicio)) + ' al ' + conAno(f.fin) : conAno(f.inicio);
+    return crear('li', { datos: { serie: c.clave }, clase: faltan <= 14 ? 'cerca' : null },
+      crear('div', { clase: 'cal-fecha' },
+        crear('time', { datetime: f.e.dia }, fecha),
+        crear('span', { clase: 'cal-cuando' }, cuando)),
+      crear('div', { clase: 'cal-que' },
+        crear('strong', null, f.e.que),
+        crear('span', { clase: 'video-dato' }, crear('span', { clase: 'clave' }), c.nombre)),
+      crear('div', { clase: 'cal-demanda' },
+        f.e.demanda ? [crear('strong', null, fmt(f.e.demanda)),
+          crear('span', { clase: 'barra', 'aria-hidden': 'true' }, crear('span', { estilo: { width: Math.max(2, Math.round((100 * f.e.demanda) / tope)) + '%' } }))]
+          : crear('span', { clase: 'tenue' }, 'sin medir')));
+  }));
+}
+
+/* ---------- Datos externos ---------- */
+
+async function leerExternos() {
+  try {
+    const respuesta = await fetch(EXTERNOS, { cache: 'no-store', credentials: 'omit' });
+    if (!respuesta.ok) throw new Error('código ' + respuesta.status);
+    const datos = await respuesta.json();
+    if (!datos || typeof datos !== 'object') throw new Error('respuesta vacía');
+    estado.externos = datos;
+    guardar('externos', JSON.stringify(datos));
+    if (estado.modelo) { pintarDatos(); pintarTendencias(estado.modelo); }
+  } catch (error) {
+    // Sin esta lectura la página sigue: faltan las búsquedas de Google y los cambios de miniatura.
+    console.warn('externos: ' + error.message);
+  }
+}
+
 
 /* ---------- Nichos: interés por familias de temas ---------- */
 
@@ -1019,7 +1564,7 @@ function pintarNichos(m) {
           crear('div', { clase: 'nicho-linea' }, chispa(fila.serie)),
           crear('div', { clase: 'nicho-cifra' },
             crear('span', { clase: 'nicho-calor' }, fmt(fila.calor)),
-            crear('span', { clase: 'nicho-barra', 'aria-hidden': 'true' }, crear('span', { style: 'width:' + Math.max(2, Math.round(100 * fila.calor / tope)) + '%' })),
+            crear('span', { clase: 'nicho-barra', 'aria-hidden': 'true' }, crear('span', { estilo: { width: Math.max(2, Math.round(100 * fila.calor / tope)) + '%' } })),
             textoDeCambio(cambioDeNicho(fila.serie))));
       })));
   });
@@ -1103,6 +1648,10 @@ function marcar(nombre, valor) {
 function conectarControles() {
   const guardado = recordar('periodo');
   if (PERIODOS[guardado]) { estado.periodo = guardado; marcar('periodo', guardado); }
+  const lista = recordar('tend');
+  if (['ref', 'yt', 'google', 'oficial'].indexOf(lista) >= 0) { estado.tend = lista; marcar('tend', lista); }
+  const pais = recordar('pais');
+  if (PAISES.some((p) => p[0] === pais)) estado.pais = pais;
   const orden = (recordar('orden') || '').split(':');
   if (COMPARAR[orden[0]]) estado.orden = { campo: orden[0], sentido: orden[1] === '1' ? 1 : -1 };
 
@@ -1139,6 +1688,21 @@ function conectarControles() {
     estado.orden = { campo: e.target.value, sentido: -1 };
     guardar('orden', estado.orden.campo + ':-1');
     pintarDatos();
+  });
+
+  $('#tend-lista').addEventListener('change', function (e) {
+    estado.tend = e.target.value;
+    guardar('tend', estado.tend);
+    if (estado.modelo) pintarTendencias(estado.modelo);
+  });
+  $('#tend-barra').addEventListener('change', function (e) {
+    if (e.target.name === 'tend-formato') estado.tendFormato = e.target.value;
+    else if (e.target.name === 'tend-sin') estado.tendSin = e.target.value;
+    else if (e.target.name === 'tend-pais') { estado.pais = e.target.value; guardar('pais', estado.pais); }
+    if (estado.modelo) pintarTendencias(estado.modelo);
+    // La barra se rehace con el filtro: el foco vuelve a la opción elegida.
+    const elegido = document.querySelector('#tend-barra input[name="' + e.target.name + '"]:checked');
+    if (elegido) elegido.focus({ preventScroll: true });
   });
 
   for (const nombre of ['vistas', 'subs']) {
@@ -1197,6 +1761,7 @@ function conectarControles() {
 
 function iniciar() {
   conectarControles();
+  try { estado.externos = JSON.parse(recordar('externos') || 'null'); } catch (error) { guardar('externos', null); }
   const guardado = recordar('datos');
   if (guardado) {
     try {
@@ -1208,6 +1773,8 @@ function iniciar() {
     }
   }
   leer();
+  leerExternos();
+  setInterval(function () { if (!document.hidden) leerExternos(); }, CADA_EXTERNOS_MS);
 }
 
 iniciar();

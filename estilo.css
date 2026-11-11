@@ -143,24 +143,65 @@ img { max-width: 100%; }
 }
 .boton-texto:hover { color: var(--tinta); text-decoration-thickness: 2px; }
 
-/* Parte */
-.parte { padding: clamp(2.25rem, 6.5vw, 5.5rem) var(--margen) clamp(2.5rem, 6vw, 5rem); }
-.parte-lema {
-  margin: 0; max-width: 24em;
-  font: 500 clamp(1.875rem, 1.05rem + 3.3vw, 3.75rem)/1.08 var(--fuente);
-  letter-spacing: -0.022em; text-wrap: balance;
-}
-.parte-resto {
-  margin: clamp(1.1rem, 2vw, 1.75rem) 0 0; max-width: 41em;
-  font-size: clamp(1.125rem, 1rem + 0.55vw, 1.4375rem); line-height: 1.42; text-wrap: pretty;
-}
-.parte-resto:empty { display: none; }
-.parte a {
-  text-decoration-thickness: 0.055em; text-underline-offset: 0.17em;
-  text-decoration-color: color-mix(in srgb, currentColor 32%, transparent);
-}
-.parte a:hover { text-decoration-color: currentColor; }
-.parte a[data-serie] { text-decoration-thickness: 0.14em; text-decoration-color: var(--serie); }
+/* Ahora: cuatro cifras con su cambio y su traza, lo que más se mueve y la meta.
+   El marco sigue en blanco y negro; el color solo dice de qué canal es cada parte. */
+.ahora { padding: clamp(1.5rem, 3.5vw, 3rem) var(--margen) clamp(2.5rem, 5vw, 4.25rem); }
+.ahora-cab { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.4rem 2rem; margin-bottom: clamp(0.9rem, 1.8vw, 1.4rem); }
+.ahora-titulo { margin: 0; font: 600 clamp(1.5rem, 1.2rem + 1vw, 2rem)/1.1 var(--fuente); letter-spacing: -0.01em; }
+.ahora-cab .leyenda { margin: 0; color: var(--tinta-2); }
+.rotulo { margin: 0; font: 600 1.25rem/1.2 var(--fuente); letter-spacing: 0; }
+
+/* Las cuatro tarjetas comparten renglones (subgrid): rótulo, cifra, cambio,
+   traza, pie y reparto quedan a la misma altura aunque un texto parta en dos. */
+.cifras { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--tinta); border-bottom: 1px solid var(--linea); }
+.cifra { display: grid; grid-row: span 6; grid-template-rows: subgrid; min-width: 0; padding: 1.1rem clamp(0.9rem, 1.8vw, 1.75rem) 1.3rem; border-left: 1px solid var(--linea); }
+.cifra:first-child { padding-left: 0; border-left: 0; }
+.cifra:last-child { padding-right: 0; }
+.cifra-rotulo { margin: 0; font: 500 0.9375rem/1.3 var(--fuente); letter-spacing: 0; color: var(--tinta-2); }
+/* Cifras proporcionales: a este tamaño las tabulares dejan huecos entre dígitos. */
+.cifra-valor { margin: 0.3rem 0 0; font: 500 clamp(2.5rem, 1.4rem + 2.7vw, 4.25rem)/1 var(--fuente); letter-spacing: -0.025em; }
+.cifra-valor a { text-decoration: none; }
+.cifra-valor a:hover { text-decoration: underline; text-decoration-thickness: 0.05em; text-underline-offset: 0.12em; }
+.cifra-delta { margin: 0.5rem 0 0; font-size: 1rem; line-height: 1.4; color: var(--tinta-2); text-wrap: balance; }
+.cifra-delta strong { font-weight: 600; color: var(--tinta); white-space: nowrap; }
+.cifra-traza { height: 2.5rem; margin-top: 0.9rem; }
+.traza { display: block; width: 100%; height: 100%; overflow: visible; }
+.traza rect { fill: var(--linea-2); }
+.traza .actual { fill: var(--tinta); }
+.traza .pista { fill: var(--linea); }
+.traza .linea { fill: none; stroke: var(--tinta); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.traza .marca { stroke: var(--tinta); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.cifra-pie { margin: 0.4rem 0 0; font-size: 0.8125rem; line-height: 1.35; color: var(--tinta-3); }
+/* Barra fina partida por canal: 8 px, extremos redondos y 2 px de fondo entre partes. */
+.reparto { display: flex; gap: 2px; height: 8px; margin-top: 0.8rem; overflow: hidden; border-radius: 4px; }
+.reparto span { flex: 1 1 0; min-width: 3px; background: var(--serie); }
+
+.ahora-bajo { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: clamp(2rem, 4.5vw, 4.5rem); margin-top: clamp(1.75rem, 3.2vw, 2.75rem); }
+.mueve-lista, .meta-lista, .tend-lista, .cal-lista, .senales ul { margin: 0; padding: 0; list-style: none; }
+.mueve-lista, .meta-lista { margin-top: 0.9rem; border-top: 1px solid var(--linea); }
+.mueve-lista li { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(6rem, 9rem); align-items: center; gap: 0.9rem; padding: 0.65rem 0; border-bottom: 1px solid var(--linea); }
+.mueve-cifra, .tend-cifra, .cal-demanda { display: grid; justify-items: end; gap: 0.2rem; text-align: right; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.mueve-cifra strong, .tend-cifra strong, .cal-demanda strong { font-size: 1.125rem; font-weight: 600; line-height: 1.1; }
+.tenue { color: var(--tinta-2); }
+/* La barra crece desde la derecha, pegada a su cifra, como en los nichos. */
+.barra { display: block; width: 100%; height: 4px; border-radius: 2px; background: var(--linea); }
+.barra span { display: block; height: 100%; margin-left: auto; border-radius: 2px; background: var(--serie, var(--tinta)); }
+.video-dato .clave, .meta-nombre .clave { display: inline-block; width: 0.6rem; height: 0.6rem; margin-right: 0.4rem; border-radius: 2px; background: var(--serie); }
+
+.meta-lista li { padding: 0.8rem 0 0.85rem; border-bottom: 1px solid var(--linea); }
+.meta-fila { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.1rem 1rem; }
+.meta-nombre { font-weight: 600; }
+.meta-nombre a { text-decoration: none; }
+.meta-nombre a:hover { text-decoration: underline; }
+.meta-cifra { color: var(--tinta-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.meta-cifra strong { font-size: 1.125rem; font-weight: 600; color: var(--tinta); }
+/* Medidor: la pista es un paso más claro del mismo color que el relleno. */
+.medidor { height: 8px; margin-top: 0.5rem; overflow: hidden; border-radius: 4px; background: color-mix(in srgb, var(--serie) 22%, var(--fondo)); }
+.medidor span { display: block; height: 100%; border-radius: 4px; background: var(--serie); }
+.meta-ritmo { margin: 0.45rem 0 0; color: var(--tinta-2); font-size: 0.875rem; line-height: 1.4; font-variant-numeric: tabular-nums; text-wrap: pretty; }
+.senales { margin-top: 1.6rem; }
+.senales ul { margin-top: 0.7rem; }
+.senales li { margin-bottom: 0.6rem; padding: 0.1rem 0 0.1rem 0.9rem; border-left: 2px solid var(--tinta); font-size: 0.9375rem; line-height: 1.4; text-wrap: pretty; }
 
 /* Tríptico: cada canal con sus colores y sus letras, sea cual sea el tema. */
 .triptico { --pad: clamp(1.25rem, 2.6vw, 2.75rem); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(6, auto); }
@@ -391,7 +432,45 @@ th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; bor
 .chispa .punto { fill: var(--serie); }
 @media (max-width: 68rem) { .nichos-grupos { grid-template-columns: minmax(0, 1fr); } }
 
-@media (min-width: 80rem) {
+/* Tendencias y calendario */
+.tendencias, .calendario { padding: 0 var(--margen) clamp(3rem, 6vw, 5rem); }
+.tend-barra { display: flex; flex-wrap: wrap; gap: 0.6rem 1.75rem; margin-top: 1.1rem; }
+.tend-barra:empty { display: none; }
+.tend-cuerpo, .cal-lista { margin-top: 1.25rem; }
+.tend-lista, .cal-lista { border-top: 1px solid var(--tinta); }
+.tend-lista li { display: flex; align-items: center; gap: 0.9rem; padding: 0.7rem 0; border-bottom: 1px solid var(--linea); }
+.puesto { flex: none; width: 1.6rem; text-align: right; color: var(--tinta-3); font-weight: 500; font-variant-numeric: tabular-nums; }
+.tend-lista .mini { flex: none; }
+.tend-texto, .mueve-texto { flex: 1 1 auto; min-width: 0; }
+.tend-cifra { flex: none; width: clamp(9.5rem, 22vw, 15rem); }
+.tend-cifra > .tenue { margin-top: 0; }
+span.video-titulo { font-weight: 600; }
+.frente { display: grid; gap: 0.3rem; width: 100%; color: var(--tinta-2); line-height: 1.3; }
+.frente.pasa { color: var(--tinta); font-weight: 600; }
+/* La barra llega a tres veces la mediana del canal; la raya marca una vez. */
+.medidor-razon { position: relative; display: block; height: 6px; border-radius: 3px; background: var(--linea); }
+.medidor-razon span { display: block; height: 100%; border-radius: 3px; background: var(--tinta-3); }
+.pasa .medidor-razon span { background: var(--tinta); }
+.medidor-razon::after { content: ""; position: absolute; top: -3px; bottom: -3px; left: 33.333%; width: 2px; background: var(--tinta); box-shadow: 0 0 0 1px var(--fondo); }
+.tend-pie { margin: 1rem 0 0; max-width: 70em; color: var(--tinta-2); font-size: 0.875rem; line-height: 1.5; }
+.tend-pie a { color: inherit; }
+
+.cal-lista li { display: grid; grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr) minmax(7rem, 11rem); align-items: center; gap: 0.5rem 1.5rem; padding: 0.8rem 0; border-bottom: 1px solid var(--linea); }
+.cal-fecha { display: grid; gap: 0.1rem; }
+.cal-fecha time { font-weight: 600; font-variant-numeric: tabular-nums; }
+.cal-cuando { color: var(--tinta-2); font-size: 0.875rem; }
+.cerca .cal-cuando { color: var(--tinta); font-weight: 600; }
+.cal-que strong { display: block; font-weight: 500; line-height: 1.3; text-wrap: pretty; }
+
+/* En la tabla de videos: el largo frente a su familia y los cambios de título o miniatura. */
+.video-familia { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 0.5rem; }
+.medidor-mini { flex: none; width: 3.5rem; height: 4px; overflow: hidden; border-radius: 2px; background: var(--linea); }
+.medidor-mini span { display: block; height: 100%; border-radius: 2px; background: var(--tinta-2); }
+.video-cambio { color: var(--tinta); }
+.lienzo .rombo { fill: var(--tinta); }
+.globo .nota { display: block; margin-top: 0.3rem; padding-top: 0.3rem; border-top: 1px solid color-mix(in srgb, currentColor 25%, transparent); }
+
+@media (min-width: 100rem) {
   .estado-nota { display: inline; }
 }
 /* Con menos de 84rem no caben siete columnas: canal y fecha pasan al renglón secundario. */
@@ -402,6 +481,12 @@ th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; bor
 @media (max-width: 68rem) {
   .graficas { grid-template-columns: minmax(0, 1fr); }
   .pie { grid-template-columns: 1fr 1fr; }
+  .ahora-bajo { grid-template-columns: minmax(0, 1fr); }
+  /* Dos tarjetas por renglón: la raya vertical queda solo entre las dos de cada par. */
+  .cifras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cifra:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .cifra:nth-child(even) { padding-right: 0; }
+  .cifra:nth-child(n + 3) { border-top: 1px solid var(--linea); }
 }
 @media (max-width: 60rem) {
   .triptico { display: block; }
@@ -427,6 +512,18 @@ th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; bor
   .tabla td.num::after { content: attr(data-etiqueta); display: block; color: var(--tinta-2); font-size: 0.8125rem; white-space: normal; }
   .filtro { flex-wrap: wrap; }
   .mini { width: 4.5rem; align-items: center; justify-content: center; }
+  /* Tendencias y calendario: las cifras bajan a su propio renglón. */
+  .tend-lista li { flex-wrap: wrap; }
+  .tend-texto { flex-basis: 9rem; }
+  .tend-cifra { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-start; gap: 0.2rem 0.5rem; width: 100%; text-align: left; }
+  .tend-cifra .barra { display: none; }
+  .tend-cifra > .tenue { margin-top: 0; }
+  .cal-lista li { grid-template-columns: minmax(0, 1fr) auto; }
+  .cal-que { grid-column: 1 / -1; grid-row: 2; }
+  /* Lo que más se mueve: la cifra y su barra pasan a un renglón propio bajo el título. */
+  .mueve-lista li { grid-template-columns: auto minmax(0, 1fr); gap: 0.45rem 0.8rem; }
+  .mueve-cifra { grid-column: 2; grid-template-columns: auto minmax(2rem, 1fr) auto; align-items: center; gap: 0.6rem; justify-items: stretch; text-align: left; }
+  .mueve-lista .mini { grid-row: span 2; align-self: start; }
   .mini img { height: auto; max-height: 100%; width: 100%; }
   .mini.short img { height: 100%; width: auto; }
 }
@@ -438,8 +535,12 @@ th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; bor
   .filtros { width: 100%; }
   .filtro legend { float: none; display: block; line-height: 1.5; margin: 0 0 0.3rem; }
   .filtro { display: block; flex: 1 0 100%; }
-  #filtro-canal { display: grid; grid-template-columns: 1fr 1fr; }
+  #filtro-canal, #tend-lista { display: grid; grid-template-columns: 1fr 1fr; }
   #filtro-tipo { display: grid; grid-template-columns: repeat(3, 1fr); }
+  /* Los filtros de tendencias caben en el ancho: tres por renglón, y el rótulo largo parte en dos. */
+  .tend-barra .segmentos { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; }
+  .tend-barra .segmentos span { height: 100%; white-space: normal; }
+  .tend-barra .segmentos[data-n="2"] { grid-template-columns: 1fr 1fr; }
   .orden-movil { flex: 1 0 100%; }
   .orden-movil select { display: block; width: 100%; margin: 0.3rem 0 0; }
   .ultimo-mini { height: 8.5rem; }
@@ -451,5 +552,5 @@ th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; bor
   .cambio { animation: none; }
 }
 @media print {
-  .pulso, .boton-tema, .secciones, .boton-texto, .filtros, .periodo-barra, .volver { display: none; }
+  .pulso, .boton-tema, .secciones, .boton-texto, .filtros, .periodo-barra, .volver, .tend-barra { display: none; }
 }

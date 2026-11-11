@@ -8,6 +8,9 @@ Página estática que muestra las cifras públicas de tres canales de YouTube: s
 - Los datos llegan en JSON desde una aplicación web de Google Apps Script, que consulta la YouTube Data API con permiso de solo lectura. La dirección está en la constante `FUENTE` de `atalaya.js`.
 - `tema.js` se carga antes del primer pintado y aplica el tema guardado en el navegador.
 - `fuentes/` contiene las tipografías, todas bajo la SIL Open Font License (`fuentes/LICENCIAS.txt`).
+- Las tendencias (videos de canales de referencia, lo más visto en YouTube y la lista oficial por país) llegan en la misma respuesta de Apps Script, que las lee una vez por hora.
+- `tareas/externos.mjs` lee cada hora el RSS público de Google Trends y la miniatura de cada video, para anotar cuándo cambia. Lo corre `.github/workflows/externos.yml` y deja `externos.json` en la rama `datos`; el sitio lo lee de ahí cada diez minutos. Esa rama guarda una sola confirmación.
+- El calendario y las familias de temas son constantes de `atalaya.js` (`CALENDARIO` y `FAMILIAS`), con la fecha de su medición.
 
 ## Probarlo en la computadora
 

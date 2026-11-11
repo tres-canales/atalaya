@@ -7,7 +7,7 @@
 <meta name="description" content="Cifras públicas de Peso Duro, Esto Viene de Lejos y Psique Ajena, leídas de YouTube cada minuto.">
 <meta name="robots" content="noindex">
 <meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' https://i.ytimg.com https://yt3.ggpht.com https://yt3.googleusercontent.com; connect-src https://script.google.com https://script.googleusercontent.com; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' https://i.ytimg.com https://yt3.ggpht.com https://yt3.googleusercontent.com; connect-src https://script.google.com https://script.googleusercontent.com https://raw.githubusercontent.com; manifest-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
@@ -26,8 +26,8 @@
 <link rel="preload" href="fuentes/ysabeau-office-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preconnect" href="https://script.google.com">
 <link rel="preconnect" href="https://i.ytimg.com">
-<link rel="stylesheet" href="estilo.css?v=6">
-<script src="tema.js?v=6"></script>
+<link rel="stylesheet" href="estilo.css?v=7">
+<script src="tema.js?v=7"></script>
 </head>
 <body>
 <a class="salto" href="#contenido">Ir al contenido</a>
@@ -45,10 +45,11 @@
   </a>
   <nav class="secciones" aria-label="Secciones">
     <a href="#canales">Canales</a>
-    <a href="#vistas">Vistas</a>
-    <a href="#suscriptores">Suscriptores</a>
+    <a href="#vistas">Gráficas</a>
     <a href="#videos">Videos</a>
+    <a href="#tendencias">Tendencias</a>
     <a href="#nichos">Nichos</a>
+    <a href="#calendario">Calendario</a>
   </nav>
   <p class="estado"><span id="estado">Cargando cifras…</span> <span class="estado-nota">Se lee de nuevo cada minuto.</span></p>
   <button class="boton-tema" id="tema" type="button">
@@ -63,10 +64,67 @@
 </div>
 
 <main id="contenido">
-  <section class="parte" aria-labelledby="parte-titulo">
-    <h1 class="oculto" id="parte-titulo">Atalaya: parte de los tres canales</h1>
-    <p class="parte-lema" id="parte-lema">Tres canales de YouTube, leídos cada minuto.</p>
-    <p class="parte-resto" id="parte-resto"></p>
+  <section class="ahora" id="ahora" aria-labelledby="ahora-titulo">
+    <div class="ahora-cab">
+      <h1 class="ahora-titulo" id="ahora-titulo">Los tres canales, ahora</h1>
+      <ul class="leyenda" id="ahora-leyenda" aria-label="Color de cada canal">
+        <li data-serie="pd"><span class="clave"></span>Peso Duro</li>
+        <li data-serie="evl"><span class="clave"></span>Esto Viene de Lejos</li>
+        <li data-serie="pa"><span class="clave"></span>Psique Ajena</li>
+      </ul>
+    </div>
+
+    <div class="cifras">
+      <article class="cifra" id="cifra-subs">
+        <h2 class="cifra-rotulo">Suscriptores</h2>
+        <p class="cifra-valor"><a href="#suscriptores" data-campo="valor">–</a></p>
+        <p class="cifra-delta" data-campo="delta"></p>
+        <div class="cifra-traza" data-campo="traza" aria-hidden="true"></div>
+        <p class="cifra-pie" data-campo="pie"></p>
+        <div class="reparto" data-campo="reparto" role="img"></div>
+      </article>
+      <article class="cifra" id="cifra-vistas">
+        <h2 class="cifra-rotulo">Vistas</h2>
+        <p class="cifra-valor"><a href="#vistas" data-campo="valor">–</a></p>
+        <p class="cifra-delta" data-campo="delta"></p>
+        <div class="cifra-traza" data-campo="traza" aria-hidden="true"></div>
+        <p class="cifra-pie" data-campo="pie"></p>
+        <div class="reparto" data-campo="reparto" role="img"></div>
+      </article>
+      <article class="cifra" id="cifra-hora">
+        <h2 class="cifra-rotulo">Vistas en la última hora</h2>
+        <p class="cifra-valor"><a href="#mueve" data-campo="valor">–</a></p>
+        <p class="cifra-delta" data-campo="delta"></p>
+        <div class="cifra-traza" data-campo="traza" aria-hidden="true"></div>
+        <p class="cifra-pie" data-campo="pie"></p>
+        <div class="reparto" data-campo="reparto" role="img"></div>
+      </article>
+      <article class="cifra" id="cifra-hoy">
+        <h2 class="cifra-rotulo">Vistas de hoy</h2>
+        <p class="cifra-valor"><a href="#vistas" data-campo="valor">–</a></p>
+        <p class="cifra-delta" data-campo="delta"></p>
+        <div class="cifra-traza" data-campo="traza" aria-hidden="true"></div>
+        <p class="cifra-pie" data-campo="pie"></p>
+        <div class="reparto" data-campo="reparto" role="img"></div>
+      </article>
+    </div>
+
+    <div class="ahora-bajo">
+      <section class="mueve" id="mueve" aria-labelledby="mueve-titulo">
+        <h2 class="rotulo" id="mueve-titulo">Lo que más se mueve</h2>
+        <p class="grafica-nota" id="mueve-nota"></p>
+        <ol class="mueve-lista" id="mueve-lista"></ol>
+      </section>
+      <section class="meta" id="meta" aria-labelledby="meta-titulo">
+        <h2 class="rotulo" id="meta-titulo">Camino a los 1,000 suscriptores</h2>
+        <p class="grafica-nota" id="meta-nota"></p>
+        <ul class="meta-lista" id="meta-lista"></ul>
+        <div class="senales" id="senales" hidden>
+          <h2 class="rotulo">Señales</h2>
+          <ul id="senales-lista"></ul>
+        </div>
+      </section>
+    </div>
   </section>
 
   <section class="triptico" id="canales" aria-label="Canales">
@@ -235,10 +293,43 @@
     <p class="volver"><a href="#contenido">Volver arriba</a></p>
   </section>
 
+  </div>
+
+  <div class="radar" id="radar" hidden>
+  <section class="tendencias" id="tendencias" aria-labelledby="tend-titulo">
+    <div class="videos-cab">
+      <div>
+        <h2 id="tend-titulo">Tendencias</h2>
+        <p class="grafica-nota" id="tend-nota"></p>
+      </div>
+      <div class="filtros">
+        <fieldset class="filtro">
+          <legend class="oculto">Lista</legend>
+          <div class="segmentos" id="tend-lista">
+            <label><input type="radio" name="tend" value="ref" checked><span>Canales de referencia</span></label>
+            <label><input type="radio" name="tend" value="yt"><span>YouTube</span></label>
+            <label><input type="radio" name="tend" value="google"><span>Google</span></label>
+            <label><input type="radio" name="tend" value="oficial"><span>Lista oficial</span></label>
+          </div>
+        </fieldset>
+      </div>
+    </div>
+    <div class="tend-barra" id="tend-barra"></div>
+    <div class="tend-cuerpo" id="tend-cuerpo"></div>
+    <p class="volver"><a href="#contenido">Volver arriba</a></p>
+  </section>
+
   <section class="nichos" id="nichos" aria-labelledby="nichos-titulo" hidden>
     <h2 id="nichos-titulo">Nichos</h2>
     <p class="grafica-nota" id="nichos-nota"></p>
     <div class="nichos-grupos" id="nichos-grupos"></div>
+    <p class="volver"><a href="#contenido">Volver arriba</a></p>
+  </section>
+
+  <section class="calendario" id="calendario" aria-labelledby="cal-titulo">
+    <h2 id="cal-titulo">Calendario</h2>
+    <p class="grafica-nota" id="cal-nota"></p>
+    <ol class="cal-lista" id="cal-lista"></ol>
     <p class="volver"><a href="#contenido">Volver arriba</a></p>
   </section>
   </div>
@@ -248,10 +339,11 @@
   <section>
     <h2>Cómo se lee</h2>
     <p>Atalaya muestra cifras públicas de tres canales de YouTube. Con esta página abierta se leen cada minuto; cada cinco minutos se registra lo que cambió. YouTube actualiza sus contadores con retraso, así que una cifra puede tardar minutos u horas en moverse. Se conservan como máximo 30 días.</p>
+    <p>Las tendencias se leen cada hora: videos de otros canales por la API de YouTube y búsquedas en alza del RSS público de Google Trends.</p>
   </section>
   <section>
     <h2>Privacidad</h2>
-    <p>Este sitio no usa cookies ni analítica y no pide datos a quien lo visita. Guarda en este navegador la última lectura y las preferencias de tema y período. Las miniaturas y los logos se cargan desde los servidores de YouTube.</p>
+    <p>Este sitio no usa cookies ni analítica y no pide datos a quien lo visita. Guarda en este navegador la última lectura y las preferencias de tema y período. Las miniaturas y los logos se cargan desde los servidores de YouTube, y las búsquedas en alza, desde GitHub.</p>
   </section>
   <section>
     <h2>Condiciones</h2>
@@ -269,6 +361,6 @@
 </footer>
 
 <noscript><p class="sin-js">Este sitio necesita JavaScript para leer las cifras de YouTube.</p></noscript>
-<script src="atalaya.js?v=6" defer></script>
+<script src="atalaya.js?v=7" defer></script>
 </body>
 </html>
