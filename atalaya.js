@@ -1,4 +1,4 @@
-// Atalaya: lee las cifras públicas de tres canales de YouTube y las dibuja.
+// Atalaya: lee las cifras públicas de los canales de YouTube y las dibuja.
 // Sin dependencias. Todo texto que viene de YouTube (títulos, descripciones)
 // entra al documento como texto, nunca como HTML.
 'use strict';
@@ -14,9 +14,8 @@ const DIA = 86400000;
 // El orden es el del servidor (índice de canal en «historia» y «mov») y fija
 // el color de cada serie: un canal conserva su color aunque otro falte.
 const CANALES = [
-  { id: 'UC4wVH_TILBbXgOyWX1ySK5Q', clave: 'pd', nombre: 'Peso Duro' },
-  { id: 'UCO988qGZH9ApN8vCq91aenQ', clave: 'evl', nombre: 'Esto Viene de Lejos' },
   { id: 'UCBBsfQy7mpbIWgSIsLwQVLw', clave: 'pa', nombre: 'Psique Ajena' },
+  { id: 'UC-yBgs8t11JWLk_3os68LzQ', clave: 'sa', nombre: 'Someday, Allegedly' },
 ];
 const PERIODOS = {
   '24h': { nombre: '24 horas', cubos: 24, unidad: 'hora' },
@@ -42,26 +41,19 @@ const CATEGORIAS = {
 // los 15 primeros resultados de la búsqueda de YouTube de sus temas (estudio
 // de reenfoque). Un largo entra en la primera familia cuyo patrón aparece en
 // su título; es una aproximación y así se dice en la página.
-const FAMILIAS_FECHA = '10/11/2026';
+const FAMILIAS_FECHA = '10/11/2026 (Psique Ajena) y el 15/11/2026 (Someday, Allegedly, búsqueda en inglés)';
 const FAMILIAS = [
-  [
-    { nombre: 'Tesoros', mediana: 92594, patron: /tesoro|gale[oó]n|pirata|bot[ií]n|naufragio/i },
-    { nombre: 'Estafas', mediana: 54507, patron: /estafa|fraude|ponzi|pir[aá]mide/i },
-    { nombre: 'Robos y hackeos', mediana: 52084, patron: /\brob[oó]|hacke|atraco|asalto|ladr[oó]n/i },
-    { nombre: 'Fortunas', mediana: 427174, patron: /fortuna|millonario|loter[ií]a|m[aá]s rico|riqueza/i },
-    { nombre: 'Crisis', mediana: 5401, patron: /crisis|quiebra|corralito|hiperinflaci[oó]n|devaluaci[oó]n/i },
-    { nombre: 'Precio de territorios', mediana: 3371, patron: /alquil|territorio|compr[oó]|vendi[oó]|guant[aá]namo/i },
-  ],
-  [
-    { nombre: 'Fiestas y tradiciones', mediana: 32679, patron: /navidad|reyes magos|halloween|san valent[ií]n|tradici[oó]n|se celebra/i },
-    { nombre: 'Caribe y República Dominicana', mediana: 57412, patron: /hait[ií]|dominican|caribe|trujillo|cuba|puerto rico/i },
-    { nombre: 'Objetos y costumbres', mediana: 1146, patron: /invento|por qu[eé] usamos/i },
-    { nombre: 'Historia detrás de un titular', mediana: 126416, patron: /./ },
-  ],
   [
     { nombre: 'Supervivencia', mediana: 323684, patron: /sobreviv|andes|rescat|atrapad|n[aá]ufrag/i },
     { nombre: 'Experimentos', mediana: 116007, patron: /experimento|psicol[oó]g|obediencia|stanford|milgram/i },
     { nombre: 'Tragedias y misterios', mediana: 273840, patron: /tragedia|misterio|accidente|masacre|secta|desaparec/i },
+  ],
+  [
+    { nombre: 'Medicina del futuro', mediana: 270153, patron: /cure|gene|crispr|organ|kidney|weight|pill|longevity|\b150\b|brain|neuralink|doctor/i },
+    { nombre: 'Energía', mediana: 228104, patron: /fusion|nuclear|reactor|energy|power bill|electric/i },
+    { nombre: 'Espacio', mediana: 133307, patron: /starship|spacex|rocket|moon|mars|orbit|space/i },
+    { nombre: 'Autos y robots', mediana: 124028, patron: /robot|optimus|robotaxi|self-driv|driverless|cybercab|flying car|truck|drone|car\b/i },
+    { nombre: 'IA y trabajo', mediana: 358821, patron: /\bAI\b|job|work|youtuber|./i },
   ],
 ];
 
@@ -69,18 +61,9 @@ const FAMILIAS = [
 // medida el 10/11/2026 (mediana de vistas de los 15 primeros resultados).
 // «hasta» marca el final cuando la fecha es un intervalo.
 const CALENDARIO = [
-  { dia: '2026-11-19', que: 'Estreno de «The Altruists», la serie sobre FTX', ci: 0, demanda: 91380 },
-  { dia: '2026-11-25', que: 'Hermanas Mirabal (1960), origen del día contra la violencia hacia la mujer', ci: 1, demanda: 82062 },
-  { dia: '2026-12-01', hasta: '2026-12-08', que: 'Por qué la Navidad es el 25 de diciembre: días para publicarlo', ci: 1, demanda: 137061 },
-  { dia: '2026-12-01', hasta: '2026-12-19', que: '25 años del corralito argentino', ci: 0, demanda: 179758 },
-  { dia: '2026-12-02', que: '25 años de la quiebra de Enron', ci: 0, demanda: 111740 },
-  { dia: '2026-12-26', que: '35 años del fin de la URSS', ci: 1, demanda: 460897 },
-  { dia: '2027-01-01', que: '25 años del euro en la calle', ci: 0, demanda: 0 },
-  { dia: '2027-01-06', que: 'Reyes Magos', ci: 1, demanda: 69852 },
-  { dia: '2027-02-01', hasta: '2027-02-28', que: 'Paso Dyatlov (febrero de 1959)', ci: 2, demanda: 273840 },
-  { dia: '2027-02-14', que: 'San Valentín', ci: 1, demanda: 90152 },
-  { dia: '2027-02-27', que: 'Independencia dominicana', ci: 1, demanda: 91931 },
-  { dia: '2027-03-27', que: '50 años del accidente de Tenerife', ci: 2, demanda: 117344 },
+  { dia: '2026-11-21', que: 'Primera semana del SA01: lectura de la meta de 1,000 vistas', ci: 1, demanda: 0 },
+  { dia: '2027-02-01', hasta: '2027-02-28', que: 'Paso Dyatlov (febrero de 1959)', ci: 0, demanda: 273840 },
+  { dia: '2027-03-27', que: '50 años del accidente de Tenerife', ci: 0, demanda: 117344 },
 ];
 
 const estado = {
@@ -384,7 +367,7 @@ function netosDeSubs(m) {
   return netos;
 }
 
-// Suma de los suscriptores de los tres canales en cada momento en que alguno cambió.
+// Suma de los suscriptores de los canales en cada momento en que alguno cambió.
 function totalDeSubs(m, inicio) {
   const series = seriesDeSubs(m, inicio).filter((s) => s.puntos.length);
   const tiempos = Array.from(new Set([].concat.apply([], series.map((s) => s.puntos.map((p) => p.t))))).sort((a, b) => a - b);
@@ -1293,7 +1276,7 @@ function fraseDeCambio(m, c) {
   return conPunto(que + cuando + ritmo);
 }
 
-/* ---------- Tendencias: lo que se mueve fuera de los tres canales ---------- */
+/* ---------- Tendencias: lo que se mueve fuera de los canales ---------- */
 
 function videoAjeno(v) {
   const corto = v.s > 0 && v.s <= 180;
@@ -1440,7 +1423,7 @@ function pintarComentarios(m) {
   $('#comentarios').hidden = !c;
   if (!c) return;
   const r = c.resumen || {};
-  $('#com-nota').textContent = 'Comentarios que los tres canales dejaron en videos de otros canales de su nicho. Se releen cada hora; última lectura el ' + fechaNumerica.format(c.leido) + ' a las ' + horaMinuto.format(c.leido).replace(/\.$/, '') + '.';
+  $('#com-nota').textContent = 'Comentarios que los canales dejaron en videos de otros canales de su nicho. Se releen cada hora; última lectura el ' + fechaNumerica.format(c.leido) + ' a las ' + horaMinuto.format(c.leido).replace(/\.$/, '') + '.';
   const oculto = c.lista.filter((x) => x.ok === false).length;
   const dato = (valor, rotulo) => crear('div', { clase: 'com-dato' }, crear('strong', null, fmt(valor)), crear('span', null, rotulo));
   reemplazar($('#com-resumen'), [

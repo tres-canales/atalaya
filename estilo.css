@@ -27,6 +27,7 @@
   --serie-pd: #1baf7a;
   --serie-evl: #2a78d6;
   --serie-pa: #eb6834;
+  --serie-sa: #2a78d6;
   /* En pantallas muy anchas el margen crece para que el contenido no pase de 96rem. */
   --margen: max(clamp(1.25rem, 4vw, 3.5rem), calc((100vw - 96rem) / 2));
   --fuente: "Ysabeau Office", "Gill Sans", Candara, "Segoe UI", system-ui, sans-serif;
@@ -46,6 +47,7 @@
     --serie-pd: #199e70;
     --serie-evl: #3987e5;
     --serie-pa: #d95926;
+    --serie-sa: #3987e5;
   }
 }
 :root[data-tema="oscuro"] {
@@ -60,6 +62,7 @@
   --serie-pd: #199e70;
   --serie-evl: #3987e5;
   --serie-pa: #d95926;
+  --serie-sa: #3987e5;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -97,6 +100,7 @@ img { max-width: 100%; }
 [data-serie="pd"] { --serie: var(--serie-pd); }
 [data-serie="evl"] { --serie: var(--serie-evl); }
 [data-serie="pa"] { --serie: var(--serie-pa); }
+[data-serie="sa"] { --serie: var(--serie-sa); }
 
 /* Avance hacia la próxima lectura. */
 .pulso { position: fixed; inset: 0 0 auto 0; height: 2px; z-index: 30; pointer-events: none; }
@@ -204,7 +208,7 @@ img { max-width: 100%; }
 .senales li { margin-bottom: 0.6rem; padding: 0.1rem 0 0.1rem 0.9rem; border-left: 2px solid var(--tinta); font-size: 0.9375rem; line-height: 1.4; text-wrap: pretty; }
 
 /* Tríptico: cada canal con sus colores y sus letras, sea cual sea el tema. */
-.triptico { --pad: clamp(1.25rem, 2.6vw, 2.75rem); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(6, auto); }
+.triptico { --pad: clamp(1.25rem, 2.6vw, 2.75rem); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(6, auto); }
 .canal {
   display: grid; grid-row: span 6; grid-template-rows: subgrid; row-gap: clamp(1.1rem, 1.8vw, 1.6rem);
   padding: clamp(1.75rem, 3.4vw, 3.25rem) var(--pad) clamp(1.75rem, 3vw, 2.75rem);
@@ -214,10 +218,11 @@ img { max-width: 100%; }
    la misma suma para que el contenido de los tres mida igual. */
 .canal:first-child { padding-left: var(--margen); }
 .canal:last-child { padding-right: var(--margen); }
-.canal:nth-child(2) { padding-inline: calc((var(--margen) + var(--pad)) / 2); }
+.canal:nth-child(2):not(:last-child) { padding-inline: calc((var(--margen) + var(--pad)) / 2); }
 .canal-pd { --c-fondo: #0f3d2e; --c-texto: #f6f1e4; --c-tenue: #b9c7b9; --c-acento: #ffc93c; }
 .canal-evl { --c-fondo: #0b2a4a; --c-texto: #f4f1ea; --c-tenue: #9fb3c8; --c-acento: #ff7a00; }
 .canal-pa { --c-fondo: #f2eee6; --c-texto: #111111; --c-tenue: #5d574d; --c-acento: #b23a2b; }
+.canal-sa { --c-fondo: #14161f; --c-texto: #f3ead8; --c-tenue: #a9a397; --c-acento: #e5483a; }
 
 .canal-cab { display: flex; align-items: center; gap: 1rem; min-width: 0; }
 .canal-logo { flex: none; width: 4rem; height: 4rem; border-radius: 50%; overflow: hidden; background: color-mix(in srgb, currentColor 14%, transparent); }
@@ -231,6 +236,8 @@ img { max-width: 100%; }
 .canal-evl .acento { color: var(--c-acento); }
 .canal-pa .canal-nombre { font: 900 clamp(1.75rem, 1.05rem + 1.45vw, 2.5rem)/1 "Fraunces", Georgia, serif; letter-spacing: -0.01em; }
 .canal-pa .canal-nombre em { font-style: italic; color: var(--c-acento); }
+.canal-sa .canal-nombre { font: 900 clamp(1.75rem, 1.05rem + 1.45vw, 2.5rem)/1 "Fraunces", Georgia, serif; letter-spacing: -0.01em; }
+.canal-sa .coma { color: var(--c-acento); }
 .canal-usuario { margin: 0.4rem 0 0; font-size: 0.9375rem; line-height: 1.2; color: var(--c-tenue); }
 .canal-desc { margin: 0; max-width: 34ch; font-size: 1.0625rem; line-height: 1.4; color: var(--c-tenue); }
 
@@ -250,6 +257,7 @@ img { max-width: 100%; }
 .canal-pd dd { --letra: 0.5; font-family: "Anton", var(--estrecha); color: var(--c-acento); letter-spacing: 0.01em; }
 .canal-evl dd { --letra: 0.66; font-family: "Inter", var(--fuente); font-weight: 800; letter-spacing: -0.035em; }
 .canal-pa dd { --letra: 0.72; font-family: "Archivo Black", var(--fuente); letter-spacing: -0.02em; }
+.canal-sa dd { --letra: 0.66; font-family: "Inter", var(--fuente); font-weight: 800; letter-spacing: -0.035em; }
 
 .canal-mov { margin: 0; font-size: 1rem; line-height: 1.35; font-weight: 500; }
 .canal-mov:empty { display: none; }
@@ -413,7 +421,7 @@ th[aria-sort="ascending"] .orden::after { border-bottom-color: currentColor; bor
 
 /* Nichos */
 .nichos { padding: 0 var(--margen) clamp(3rem, 6vw, 5rem); }
-.nichos-grupos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(2rem, 4vw, 4rem); margin-top: clamp(1.5rem, 3vw, 2.5rem); }
+.nichos-grupos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(2rem, 4vw, 4rem); margin-top: clamp(1.5rem, 3vw, 2.5rem); }
 .nichos-grupo h3 { margin: 0; padding-bottom: 0.6rem; font: 600 1.125rem/1.2 var(--fuente); border-bottom: 2px solid var(--serie); }
 .nichos-lista { margin: 0; padding: 0; list-style: none; }
 .nichos-lista li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.35rem 1rem; align-items: start; padding: 0.95rem 0; border-bottom: 1px solid var(--linea); }

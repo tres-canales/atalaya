@@ -6,7 +6,7 @@
 
 const FUENTE_ATI = FUENTE.replace('datos=1', 'atipicos=1');
 const CADA_ATI_MS = 10 * 60000;
-const GRUPOS_ATI = [['top', 'Los 10 mayores'], ['pd', 'Peso Duro'], ['evl', 'Esto Viene de Lejos'], ['pa', 'Psique Ajena'], ['ref', 'Referencia']];
+const GRUPOS_ATI = [['top', 'Los 10 mayores'], ['pa', 'Psique Ajena'], ['sa', 'Someday, Allegedly'], ['ref', 'Referencia']];
 // Palabras que no dicen de qué trata un video: no cuentan como tema repetido.
 const COMUNES_ATI = new Set(('para como esta este esto estos estas pero porque sobre entre desde hasta cuando donde quien quienes cual cuales todo toda todos todas '
   + 'nada nadie algo otro otra otros otras mismo misma solo sola sido fue fueron eran tiene tienen hacer hizo hace puede pueden asi aqui alla '
@@ -18,7 +18,7 @@ const COMUNES_ATI = new Set(('para como esta este esto estos estas pero porque s
 
 function claveDeNicho(ni) {
   if (ni === 'ref') return 'ref';
-  return ni.indexOf('pd_') === 0 ? 'pd' : ni.indexOf('vl_') === 0 ? 'evl' : ni.indexOf('pa_') === 0 ? 'pa' : 'ref';
+  return ni.indexOf('pa_') === 0 ? 'pa' : ni.indexOf('sa_') === 0 ? 'sa' : 'ref';
 }
 
 function palabrasDe(texto) {
