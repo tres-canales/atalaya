@@ -277,7 +277,7 @@ function cubosDeVistas(m, clave) {
   const n = PERIODOS[clave].cubos;
   if (clave === '24h') {
     const ultima = Math.floor(m.ahora / HORA) * HORA;
-    for (let i = n - 1; i >= 0; i--) cubos.push({ t: ultima - i * HORA, fin: ultima - i * HORA + HORA, valores: [0, 0, 0] });
+    for (let i = n - 1; i >= 0; i--) cubos.push({ t: ultima - i * HORA, fin: ultima - i * HORA + HORA, valores: CANALES.map(() => 0) });
     const posicion = {};
     cubos.forEach(function (c, i) { posicion[c.t] = i; });
     for (const f of m.porHora) {
@@ -291,11 +291,11 @@ function cubosDeVistas(m, clave) {
   for (let i = n - 1; i >= 0; i--) {
     const dia = new Date(hoy);
     dia.setDate(hoy.getDate() - i);
-    cubos.push({ t: dia.getTime(), fin: 0, valores: [0, 0, 0] });
+    cubos.push({ t: dia.getTime(), fin: 0, valores: CANALES.map(() => 0) });
   }
   cubos.forEach(function (c, i) { c.fin = i + 1 < cubos.length ? cubos[i + 1].t : m.ahora; });
   const anotar = function (t, ci, cantidad) {
-    if (t < cubos[0].t || cantidad <= 0 || ci > 2) return;
+    if (t < cubos[0].t || cantidad <= 0 || ci >= CANALES.length) return;
     let i = cubos.length - 1;
     while (i > 0 && cubos[i].t > t) i--;
     cubos[i].valores[ci] += cantidad;
@@ -362,7 +362,7 @@ function seriesDeSubs(m, inicio) {
 /* ---------- Ahora: cuatro cifras, lo que se mueve y la meta ---------- */
 
 function netosDeSubs(m) {
-  const netos = [0, 0, 0];
+  const netos = CANALES.map(() => 0);
   for (const f of m.cambiosSubs) if (netos[f[1]] !== undefined) netos[f[1]] += Number(f[2]) || 0;
   return netos;
 }
@@ -491,7 +491,7 @@ function pintarCifras(m) {
   const deCanal = {};
   for (const v of m.videos) deCanal[v.id] = v.ci;
   for (const id in m.diario) if (deCanal[id] === undefined) deCanal[id] = m.diario[id].ci;
-  const ultima = [0, 0, 0];
+  const ultima = CANALES.map(() => 0);
   for (const id in m.h1) if (ultima[deCanal[id]] !== undefined) ultima[deCanal[id]] += Number(m.h1[id]) || 0;
   const entradas = sumar(ultima);
   const promedio = total24 / 24;
@@ -658,7 +658,7 @@ function cifraDeVideo(v, texto, seccion) {
 
 function pintarCanales(m) {
   const cubos = cubosDeVistas(m, '24h');
-  const netos = [0, 0, 0];
+  const netos = CANALES.map(() => 0);
   for (const f of m.cambiosSubs) if (netos[f[1]] !== undefined) netos[f[1]] += Number(f[2]) || 0;
   const ventana = ventanaDeUnDia(m);
   for (const c of m.canales) {
