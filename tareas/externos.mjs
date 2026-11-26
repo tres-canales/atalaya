@@ -6,7 +6,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 
-const FUENTE = 'https://script.google.com/macros/s/AKfycbxdRWV_5JxbMyXQ3rAZdO7gWQhOay_ecISRB9x05wuZzLOQ5dTqOuPunSJeYnksXPZKTg/exec?datos=1';
+const FUENTE = 'https://vigia-593964998100.us-east1.run.app/vivo';
 const PAISES = ['DO', 'MX', 'ES', 'CO', 'AR', 'US'];
 const HORA = 3600000, DIA = 86400000;
 const carpeta = process.argv[2] || 'datos';

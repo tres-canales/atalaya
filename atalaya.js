@@ -1,35 +1,38 @@
-// Atalaya: lee las cifras públicas de los canales de YouTube y las dibuja.
-// Sin dependencias. Todo texto que viene de YouTube (títulos, descripciones)
-// entra al documento como texto, nunca como HTML.
+// Atalaya: lee las cifras de Kilometraje Real y El Banco de la Plaza que
+// entrega Atalaya Vigía (Cloud Run) y las dibuja. Sin dependencias. Todo
+// texto que viene de YouTube entra al documento como texto, nunca como HTML.
 'use strict';
 
-// Aplicación web de Apps Script que consulta la YouTube Data API y responde en JSON.
-const FUENTE = 'https://script.google.com/macros/s/AKfycbxdRWV_5JxbMyXQ3rAZdO7gWQhOay_ecISRB9x05wuZzLOQ5dTqOuPunSJeYnksXPZKTg/exec?datos=1';
-// El servidor guarda cada lectura 45 s: leer más seguido devolvería lo mismo.
+// Atalaya Vigía, versión 12 (Cloud Run, proyecto prod-canales-gcp).
+const VIGIA = 'https://vigia-593964998100.us-east1.run.app';
+// Vigía lee YouTube como mucho cada 45 s; el panel cambia cada 10 minutos.
 const CADA_MS = 60000;
+const CADA_PANEL_MS = 5 * 60000;
 const ESPERA_MS = 25000;
 const HORA = 3600000;
 const DIA = 86400000;
 
-// El orden es el del servidor (índice de canal en «historia» y «mov») y fija
-// el color de cada serie: un canal conserva su color aunque otro falte.
+// El orden es el de Vigía (índice de canal en «historia», «mov» y «analytics»)
+// y fija el color de cada serie.
 const CANALES = [
-  { id: 'UCBBsfQy7mpbIWgSIsLwQVLw', clave: 'pa', nombre: 'Psique Ajena' },
-  { id: 'UC-yBgs8t11JWLk_3os68LzQ', clave: 'sa', nombre: 'Someday, Allegedly' },
+  { id: 'UCNxn2eOfVDo8lwp0BCR_-VQ', clave: 'kr', nombre: 'Kilometraje Real', corto: 'Kilometraje' },
+  { id: 'UCO988qGZH9ApN8vCq91aenQ', clave: 'bdp', nombre: 'El Banco de la Plaza', corto: 'El Banco' },
 ];
 const PERIODOS = {
   '24h': { nombre: '24 horas', cubos: 24, unidad: 'hora' },
   '7d': { nombre: '7 días', cubos: 7, unidad: 'día' },
   '30d': { nombre: '30 días', cubos: 30, unidad: 'día' },
 };
+const VISTAS = ['hoy', 'crecimiento', 'videos', 'radar'];
 
-// Lo que no viene de Atalaya Vigía: las búsquedas en alza de Google y los
-// cambios de miniatura. Una tarea del repositorio los escribe cada hora en la
-// rama «datos».
+// Búsquedas de Google Trends y cambios de miniatura: los escribe cada hora la
+// tarea «Datos externos» del repositorio en la rama «datos».
 const EXTERNOS = 'https://raw.githubusercontent.com/tres-canales/atalaya/datos/externos.json';
 const CADA_EXTERNOS_MS = 10 * 60000;
-// Suscriptores que pide el Programa de socios de YouTube.
+// Programa de socios de YouTube. Horas de largos públicos de los últimos 12
+// meses: la meta del dueño es la regla que rige desde el 01/02/2027 (13 de Atalaya).
 const META_SUBS = 1000;
+const META_HORAS = 8000;
 const PAISES = [['DO', 'Rep. Dominicana'], ['MX', 'México'], ['ES', 'España'], ['CO', 'Colombia'], ['AR', 'Argentina'], ['US', 'EE. UU.']];
 const CATEGORIAS = {
   1: 'Cine y animación', 2: 'Autos', 10: 'Música', 15: 'Mascotas y animales', 17: 'Deportes', 19: 'Viajes',
@@ -37,39 +40,15 @@ const CATEGORIAS = {
   26: 'Consejos y estilo', 27: 'Educación', 28: 'Ciencia y tecnología', 29: 'Activismo',
 };
 
-// Familias de temas de cada canal, en el orden de CANALES. La mediana es la de
-// los 15 primeros resultados de la búsqueda de YouTube de sus temas (estudio
-// de reenfoque). Un largo entra en la primera familia cuyo patrón aparece en
-// su título; es una aproximación y así se dice en la página.
-const FAMILIAS_FECHA = '10/11/2026 (Psique Ajena) y el 15/11/2026 (Someday, Allegedly, búsqueda en inglés)';
-const FAMILIAS = [
-  [
-    { nombre: 'Supervivencia', mediana: 323684, patron: /sobreviv|andes|rescat|atrapad|n[aá]ufrag/i },
-    { nombre: 'Experimentos', mediana: 116007, patron: /experimento|psicol[oó]g|obediencia|stanford|milgram/i },
-    { nombre: 'Tragedias y misterios', mediana: 273840, patron: /tragedia|misterio|accidente|masacre|secta|desaparec/i },
-  ],
-  [
-    { nombre: 'Medicina del futuro', mediana: 270153, patron: /cure|gene|crispr|organ|kidney|weight|pill|longevity|\b150\b|brain|neuralink|doctor/i },
-    { nombre: 'Energía', mediana: 228104, patron: /fusion|nuclear|reactor|energy|power bill|electric/i },
-    { nombre: 'Espacio', mediana: 133307, patron: /starship|spacex|rocket|moon|mars|orbit|space/i },
-    { nombre: 'Autos y robots', mediana: 124028, patron: /robot|optimus|robotaxi|self-driv|driverless|cybercab|flying car|truck|drone|car\b/i },
-    { nombre: 'IA y trabajo', mediana: 358821, patron: /\bAI\b|job|work|youtuber|./i },
-  ],
-];
-
-// Fechas que mueven búsquedas en los temas de los canales, con la demanda
-// medida el 10/11/2026 (mediana de vistas de los 15 primeros resultados).
-// «hasta» marca el final cuando la fecha es un intervalo.
-const CALENDARIO = [
-  { dia: '2026-11-21', que: 'Primera semana del SA01: lectura de la meta de 1,000 vistas', ci: 1, demanda: 0 },
-  { dia: '2027-02-01', hasta: '2027-02-28', que: 'Paso Dyatlov (febrero de 1959)', ci: 0, demanda: 273840 },
-  { dia: '2027-03-27', que: '50 años del accidente de Tenerife', ci: 0, demanda: 117344 },
-];
-
 const estado = {
+  vivo: null,
+  panel: null,
+  etagPanel: '',
   modelo: null,
   externos: null,
+  vista: 'hoy',
   tend: 'ref',
+  tendCanal: '',
   tendFormato: '',
   tendSin: '',
   pais: 'DO',
@@ -79,11 +58,13 @@ const estado = {
   canal: '',
   tipo: '',
   ultimoIntento: 0,
+  ultimoPanel: 0,
   reloj: 0,
   pulso: null,
 };
 
 /* ---------- Utilidades ---------- */
+
 
 const $ = (selector, raiz) => (raiz || document).querySelector(selector);
 const sinMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -199,7 +180,7 @@ function fechaLocal(texto) {
 // «p. m.» ya termina en punto: no se escribe otro.
 function conPunto(texto) { return /\.$/.test(texto) ? texto : texto + '.'; }
 
-/* ---------- Modelo: de la respuesta del servidor a lo que se dibuja ---------- */
+/* ---------- Modelo: de la respuesta de Vigía a lo que se dibuja ---------- */
 
 function preparar(d) {
   const ahora = Date.parse(d.hora) || Date.now();
@@ -209,7 +190,7 @@ function preparar(d) {
     porNombre[s.nombre || c.nombre] = ci;
     const usuario = s.usuario && s.usuario.charAt(0) === '@' ? s.usuario : '';
     return {
-      ci: ci, id: c.id, clave: c.clave, nombre: c.nombre,
+      ci: ci, id: c.id, clave: c.clave, nombre: c.nombre, corto: c.corto,
       falta: !s.id || !!s.error,
       subs: Number(s.subs) || 0,
       vistasCanal: Number(s.vistas) || 0,
@@ -240,6 +221,7 @@ function preparar(d) {
     // sus videos; se muestra el mayor de los dos.
     c.vistas = Math.max(c.vistasCanal, sumar(suyos.map((v) => v.vistas)));
     c.ultimo = suyos.reduce((a, v) => (!a || v.publicado > a.publicado ? v : a), null);
+    c.ultimoLargo = suyos.filter((v) => !v.corto).reduce((a, v) => (!a || v.publicado > a.publicado ? v : a), null);
   }
 
   const mov = d.mov || {};
@@ -267,6 +249,7 @@ function preparar(d) {
     tendencias: d.tendencias && Array.isArray(d.tendencias.ref) && d.tendencias.leido ? d.tendencias : null,
     comentarios: d.comentarios && Array.isArray(d.comentarios.lista) && d.comentarios.lista.length ? d.comentarios : null,
     cambios: (Array.isArray(d.cambios) ? d.cambios : []).filter((f) => Array.isArray(f) && f.length >= 4),
+    analytics: d.analytics && Array.isArray(d.analytics.canales) ? d.analytics : null,
   };
 }
 
@@ -359,7 +342,7 @@ function seriesDeSubs(m, inicio) {
   });
 }
 
-/* ---------- Ahora: cuatro cifras, lo que se mueve y la meta ---------- */
+/* ---------- Trazas pequeñas ---------- */
 
 function netosDeSubs(m) {
   const netos = CANALES.map(() => 0);
@@ -431,157 +414,6 @@ function trazaDeComparacion(valor, referencia) {
   return svg;
 }
 
-// Barra fina partida por canal. Las cifras de cada parte están en el bloque
-// de su canal, justo debajo; aquí van en el rótulo accesible y al pasar el cursor.
-function pintarReparto(nodo, valores, de) {
-  const total = sumar(valores);
-  nodo.hidden = total <= 0;
-  if (total <= 0) { nodo.textContent = ''; return; }
-  nodo.setAttribute('aria-label', 'Reparto de ' + de + ' por canal: ' + CANALES.map((c, ci) => c.nombre + ', ' + fmt(valores[ci])).join('; ') + '.');
-  reemplazar(nodo, CANALES.map(function (c, ci) {
-    if (valores[ci] <= 0) return null;
-    return crear('span', {
-      datos: { serie: c.clave }, title: c.nombre + ': ' + fmt(valores[ci]) + ' (' + Math.round(100 * valores[ci] / total) + ' %)',
-      estilo: { 'flex-grow': String(valores[ci]) },
-    });
-  }));
-}
-
-function ponerTarjeta(id, t) {
-  const tarjeta = $('#' + id);
-  const campo = (nombre) => $('[data-campo="' + nombre + '"]', tarjeta);
-  ponerCifra(campo('valor'), t.valor);
-  campo('valor').setAttribute('aria-label', fmt(t.valor) + ' ' + t.de);
-  reemplazar(campo('delta'), t.delta);
-  reemplazar(campo('traza'), [t.traza]);
-  campo('pie').textContent = t.pie;
-  pintarReparto(campo('reparto'), t.reparto, t.de);
-}
-
-function pintarCifras(m) {
-  const vivos = m.canales.filter((c) => !c.falta);
-  const ventana = ventanaDeUnDia(m);
-  const horas = cubosDeVistas(m, '24h');
-  const dias = cubosDeVistas(m, '7d');
-  const porHora = horas.map((c) => sumar(c.valores));
-  const total24 = sumar(porHora);
-
-  const neto = sumar(netosDeSubs(m));
-  const inicio7 = m.ahora - 7 * DIA;
-  const serie = totalDeSubs(m, inicio7);
-  const desde = serie.length ? Math.max(inicio7, serie[0].t) : inicio7;
-  ponerTarjeta('cifra-subs', {
-    valor: sumar(vivos.map((c) => c.subs)), de: 'suscriptores',
-    delta: !m.bitacoraDesde ? [] : neto ? [crear('strong', null, conSigno(neto)), ' ' + ventana] : ['Sin cambio ' + ventana],
-    traza: trazaDeEscalones(serie, desde, m.ahora),
-    pie: serie.length < 2 ? '' : desde > inicio7 + HORA ? 'Desde el ' + diaYMes.format(desde) : 'Últimos 7 días',
-    reparto: m.canales.map((c) => (c.falta ? 0 : c.subs)),
-  });
-
-  ponerTarjeta('cifra-vistas', {
-    valor: sumar(vivos.map((c) => c.vistas)), de: 'vistas',
-    delta: !m.bitacoraDesde ? [] : total24 ? [crear('strong', null, conSigno(total24)), ' ' + ventana] : ['Sin vistas nuevas ' + ventana],
-    traza: trazaDeColumnas(porHora),
-    pie: 'Por hora, últimas 24 horas',
-    reparto: m.canales.map((c) => (c.falta ? 0 : c.vistas)),
-  });
-
-  // La última hora va contra el promedio por hora del día. Con menos de seis
-  // horas de registro el promedio todavía no dice nada.
-  const deCanal = {};
-  for (const v of m.videos) deCanal[v.id] = v.ci;
-  for (const id in m.diario) if (deCanal[id] === undefined) deCanal[id] = m.diario[id].ci;
-  const ultima = CANALES.map(() => 0);
-  for (const id in m.h1) if (ultima[deCanal[id]] !== undefined) ultima[deCanal[id]] += Number(m.h1[id]) || 0;
-  const entradas = sumar(ultima);
-  const promedio = total24 / 24;
-  const conPromedio = total24 > 0 && m.bitacoraDesde > 0 && m.ahora - m.bitacoraDesde >= 6 * HORA;
-  let comparacion = [];
-  if (conPromedio) {
-    const razon = entradas / promedio;
-    comparacion = razon >= 1.15 ? [crear('strong', null, '▲ ' + unaCifra(razon) + ' veces'), ' el promedio del día']
-      : razon <= 0.85 ? [crear('strong', null, '▼ ' + fmt(Math.round(razon * 100)) + ' %'), ' del promedio del día']
-        : ['En el promedio del día'];
-  }
-  ponerTarjeta('cifra-hora', {
-    valor: entradas, de: 'vistas en la última hora',
-    delta: comparacion,
-    traza: trazaDeComparacion(entradas, conPromedio ? promedio : 0),
-    pie: conPromedio ? 'La marca es el promedio: ' + fmt(Math.round(promedio)) + ' por hora' : '',
-    reparto: ultima,
-  });
-
-  const hoy = dias[dias.length - 1], ayer = dias[dias.length - 2];
-  // Ayer solo sirve de comparación si el registro lo cubre entero.
-  const conAyer = isFinite(m.registroDesde) && m.registroDesde <= ayer.t;
-  ponerTarjeta('cifra-hoy', {
-    valor: sumar(hoy.valores), de: 'vistas de hoy',
-    delta: conAyer ? ['Ayer, ', crear('strong', null, fmt(sumar(ayer.valores))), ' en el día']
-      : isFinite(m.registroDesde) ? ['El registro por día empezó el ' + diaYMes.format(m.registroDesde)] : [],
-    traza: trazaDeColumnas(dias.map((c) => sumar(c.valores))),
-    pie: 'Por día, últimos 7 días',
-    reparto: hoy.valores,
-  });
-}
-
-// Los cinco videos propios que más vistas ganaron en la última hora o, si
-// ninguno se movió, en las últimas 24.
-function pintarMueve(m) {
-  const porHora = m.videos.some((v) => m.h1[v.id] > 0);
-  const medida = (v) => Number((porHora ? m.h1 : m.h24)[v.id]) || 0;
-  const lista = m.videos.filter((v) => medida(v) > 0).sort((a, b) => medida(b) - medida(a) || b.publicado - a.publicado).slice(0, 5);
-  const ventana = ventanaDeUnDia(m);
-  $('#mueve-nota').textContent = lista.length
-    ? (porHora ? 'Vistas ganadas en la última hora.' : conPunto('En la última hora no se movió ningún contador: van las vistas ganadas ' + ventana))
-    : (m.bitacoraDesde ? conPunto('Ningún contador se movió ' + ventana) : '');
-  const tope = lista.length ? medida(lista[0]) : 1;
-  reemplazar($('#mueve-lista'), lista.map(function (v) {
-    const c = m.canales[v.ci];
-    const enElDia = porHora && m.h24[v.id] > 0 ? fmt(m.h24[v.id]) + ' en 24 horas' : fmt(v.vistas) + ' en total';
-    return crear('li', { datos: { serie: c.clave } },
-      miniatura(v, 'mini', 'mqdefault'),
-      crear('div', { clase: 'mueve-texto' },
-        enlaceExterno(v.url, v.titulo, { clase: 'video-titulo' }),
-        crear('span', { clase: 'video-dato' }, crear('span', { clase: 'clave' }), c.nombre + ' · ' + (v.corto ? 'Short' : 'Video') + ' · ' + publicadoHace(m, v))),
-      crear('div', { clase: 'mueve-cifra' },
-        crear('strong', null, '+' + fmt(medida(v))),
-        crear('span', { clase: 'barra', 'aria-hidden': 'true' }, crear('span', { estilo: { width: Math.max(3, Math.round(100 * medida(v) / tope)) + '%' } })),
-        crear('span', { clase: 'tenue' }, enElDia)));
-  }));
-}
-
-// Suscriptores de cada canal frente a la meta. La fecha estimada es una
-// proyección del ritmo registrado y solo aparece con tres días de historia.
-function pintarMeta(m) {
-  const netos = netosDeSubs(m);
-  const ventana = ventanaDeUnDia(m);
-  $('#meta-nota').textContent = 'El Programa de socios de YouTube pide ' + fmt(META_SUBS) + ' suscriptores. También pide horas de reproducción, que no son públicas.';
-  reemplazar($('#meta-lista'), m.canales.map(function (c) {
-    if (c.falta) return null;
-    const filas = m.historia.filter((f) => f[1] === c.ci).sort((a, b) => a[0] - b[0]);
-    let ritmo = '';
-    if (filas.length && c.subs < META_SUBS) {
-      const dias = (m.ahora - filas[0][0]) / DIA;
-      const ganados = c.subs - Number(filas[0][2]);
-      if (dias >= 3 && ganados > 0) {
-        const porDia = ganados / dias;
-        ritmo = 'Al ritmo registrado desde el ' + diaYMes.format(filas[0][0]) + ' (' + unaCifra(porDia) + ' por día), llegaría el ' + fechaNumerica.format(m.ahora + ((META_SUBS - c.subs) / porDia) * DIA) + '.';
-      }
-    }
-    const pct = Math.min(100, (100 * c.subs) / META_SUBS);
-    return crear('li', { datos: { serie: c.clave } },
-      crear('div', { clase: 'meta-fila' },
-        crear('span', { clase: 'meta-nombre' }, crear('span', { clase: 'clave' }), enlaceExterno(c.url, c.nombre)),
-        crear('span', { clase: 'meta-cifra' }, crear('strong', null, fmt(c.subs)), ' de ' + fmt(META_SUBS))),
-      crear('div', { clase: 'medidor', role: 'img', 'aria-label': c.nombre + ': ' + fmt(c.subs) + ' de ' + fmt(META_SUBS) + ' suscriptores' },
-        crear('span', { estilo: { width: Math.max(0.8, pct).toFixed(1) + '%' } })),
-      crear('p', { clase: 'meta-ritmo' },
-        unaCifra(pct) + ' % de la meta',
-        netos[c.ci] ? ' · ' + conSigno(netos[c.ci]) + ' ' + ventana : '',
-        ritmo ? '. ' + ritmo : ''));
-  }));
-}
-
 // «a las 14 horas», «a los 3 días».
 function alCabo(ms) {
   const horas = Math.max(1, Math.round(ms / HORA));
@@ -606,22 +438,13 @@ function pintarSenales(m) {
     if (!(v.med > 0) || Math.round((10 * v.n) / v.med) < 16) continue;
     ajenas.push({ peso: v.n / v.med, nodo: [
       enlaceExterno('https://www.youtube.com/watch?v=' + encodeURIComponent(v.id), v.t), ', de ' + v.c + ', va ' + unaCifra(v.n / v.med) + ' veces sobre la mediana de su canal ' + alCabo(m.ahora - v.p) + ' de publicado. ',
-      crear('a', { href: '#tendencias' }, 'Ver tendencias'),
+      crear('a', { href: '#tendencias' }, 'Ver en el radar'),
     ] });
   }
   const lista = propias.concat(ajenas.sort((a, b) => b.peso - a.peso).slice(0, 3));
   $('#senales').hidden = lista.length === 0;
   reemplazar($('#senales-lista'), lista.map((s) => crear('li', null, s.nodo)));
 }
-
-function pintarAhora(m) {
-  pintarCifras(m);
-  pintarMueve(m);
-  pintarMeta(m);
-  pintarSenales(m);
-}
-
-/* ---------- Tríptico de canales ---------- */
 
 function ponerCifra(nodo, valor) {
   const antes = nodo.dataset.valor === undefined ? null : Number(nodo.dataset.valor);
@@ -656,73 +479,304 @@ function cifraDeVideo(v, texto, seccion) {
   return enlaceExterno('https://studio.youtube.com/video/' + v.id + '/' + seccion, texto);
 }
 
-function pintarCanales(m) {
-  const cubos = cubosDeVistas(m, '24h');
-  const netos = CANALES.map(() => 0);
-  for (const f of m.cambiosSubs) if (netos[f[1]] !== undefined) netos[f[1]] += Number(f[2]) || 0;
-  const ventana = ventanaDeUnDia(m);
-  for (const c of m.canales) {
-    const bloque = document.querySelector('[data-canal="' + c.id + '"]');
-    if (!bloque) continue;
-    const campo = (nombre) => bloque.querySelectorAll('[data-campo="' + nombre + '"]');
-    if (c.falta) {
-      // Las cifras que hubiera se quedan; el aviso dice que no son de esta lectura.
-      campo('movimiento')[0].textContent = 'YouTube no devolvió este canal en la última lectura.';
-      continue;
-    }
-    const vistasDelDia = sumar(cubos.map((cubo) => cubo.valores[c.ci]));
-    const ganado = [];
-    if (vistasDelDia > 0) ganado.push(cuantos(vistasDelDia, 'vista', 'vistas'));
-    if (netos[c.ci] > 0) ganado.push(cuantos(netos[c.ci], 'suscriptor', 'suscriptores'));
-    let movimiento = '';
-    if (m.bitacoraDesde) {
-      movimiento = conPunto((ganado.length ? 'Ganó ' + ganado.join(' y ') + ' ' : 'Sin vistas nuevas ') + ventana);
-      if (netos[c.ci] < 0) movimiento += ' Perdió ' + cuantos(-netos[c.ci], 'suscriptor', 'suscriptores') + '.';
-    }
-    campo('movimiento')[0].textContent = movimiento;
-    campo('canal').forEach(function (a) { a.href = c.url; });
-    const logo = campo('logo')[0];
-    if (c.logo && logo.getAttribute('src') !== c.logo) { logo.src = c.logo; logo.hidden = false; }
-    if (c.usuario) campo('usuario')[0].textContent = c.usuario;
-    campo('descripcion')[0].textContent = c.descripcion;
-    const cifras = [['subs', c.subs, 'suscriptor', 'suscriptores'], ['vistas', c.vistas, 'vista', 'vistas'], ['videos', c.total, 'video', 'videos']];
-    let caracteres = 0;
-    for (const [nombre, valor, uno, varios] of cifras) {
-      const nodo = campo(nombre)[0];
-      ponerCifra(nodo, valor);
-      nodo.closest('div').querySelector('dt').textContent = valor === 1 ? uno : varios;
-      // El enlace solo muestra el número; el nombre accesible dice de qué es.
-      nodo.setAttribute('aria-label', fmt(valor) + ' ' + (valor === 1 ? uno : varios));
-      // Una cifra corta ocupa al menos lo que su rótulo, que mide unos tres dígitos.
-      caracteres += Math.max(fmt(valor).length, 3);
-    }
-    bloque.querySelector('.canal-cifras').style.setProperty('--n', caracteres);
+/* ---------- Hoy: el titular ---------- */
 
-    const caja = campo('ultimo')[0];
-    const v = c.ultimo;
-    if (!v) {
-      reemplazar(caja, [crear('p', { clase: 'ultimo-dato' }, c.total > 0 ? 'YouTube no devolvió los videos de este canal en la última lectura.' : 'Sin videos publicados.')]);
-      caja.dataset.video = '';
-      continue;
+function analiticaDe(m, ci) {
+  return m.analytics && m.analytics.canales ? m.analytics.canales[ci] || null : null;
+}
+
+// Una frase que resume el día con las cifras de la bitácora.
+function pintarResumen(m) {
+  const hoy = new Date(m.ahora);
+  $('#fecha-hoy').textContent = diaCompleto.format(hoy).replace(/^./, (l) => l.toUpperCase());
+  const partes = [];
+  const cubos = cubosDeVistas(m, '24h');
+  const vistas = CANALES.map((c, ci) => sumar(cubos.map((x) => x.valores[ci])));
+  const netos = netosDeSubs(m);
+  const ventana = ventanaDeUnDia(m);
+  if (!m.bitacoraDesde) {
+    reemplazar($('#resumen'), ['Vigía empezó a registrar hace poco: el movimiento del día aparece con las próximas lecturas.']);
+    return;
+  }
+  const total = sumar(vistas), subs = sumar(netos);
+  partes.push(conMayuscula(ventana) + ', los dos canales sumaron ', crear('strong', null, cuantos(total, 'vista', 'vistas')));
+  partes.push(subs > 0 ? [' y ', crear('strong', null, cuantos(subs, 'suscriptor nuevo', 'suscriptores nuevos'))] : subs < 0 ? [' y perdieron ', crear('strong', null, cuantos(-subs, 'suscriptor', 'suscriptores'))] : ', sin cambio de suscriptores');
+  const lider = m.videos.filter((v) => m.h24[v.id] > 0).sort((a, b) => m.h24[b.id] - m.h24[a.id])[0];
+  if (lider) partes.push('. Lo que más empuja: ', enlaceExterno(lider.url, '«' + lider.titulo + '»'), ', de ' + m.canales[lider.ci].nombre + ', con ' + cuantos(m.h24[lider.id], 'vista', 'vistas') + '.');
+  else partes.push('.');
+  reemplazar($('#resumen'), partes);
+}
+function conMayuscula(texto) { return texto.charAt(0).toUpperCase() + texto.slice(1); }
+
+/* ---------- Hoy: los dos canales ---------- */
+
+function medidor(nodo, valor, meta, rotulo, pie) {
+  const pct = Math.min(100, (100 * valor) / meta);
+  reemplazar(nodo, [
+    crear('div', { clase: 'meta-fila' }, crear('span', null, rotulo), crear('span', { clase: 'meta-cifra' }, crear('strong', null, fmt(valor)), ' de ' + fmt(meta))),
+    crear('div', { clase: 'medidor', role: 'img', 'aria-label': rotulo + ': ' + fmt(valor) + ' de ' + fmt(meta) }, crear('span', { estilo: { width: Math.max(0.8, pct).toFixed(1) + '%' } })),
+    pie ? crear('p', { clase: 'meta-pie' }, pie) : null,
+  ]);
+}
+
+function ritmoDeSubs(m, c) {
+  const filas = m.historia.filter((f) => f[1] === c.ci).sort((a, b) => a[0] - b[0]);
+  const a = analiticaDe(m, c.ci);
+  // Con Analytics, el ritmo sale de los últimos 28 días; si no, de la historia de Vigía.
+  if (a && a.subsGanados28 - a.subsPerdidos28 > 0) {
+    const porDia = (a.subsGanados28 - a.subsPerdidos28) / 28;
+    return unaCifra(porDia * 7) + ' por semana en los últimos 28 días; a ese ritmo llegaría el ' + fechaNumerica.format(m.ahora + ((META_SUBS - c.subs) / porDia) * DIA) + '.';
+  }
+  if (filas.length && (m.ahora - filas[0][0]) / DIA >= 3) {
+    const ganados = c.subs - Number(filas[0][2]);
+    if (ganados > 0) {
+      const porDia = ganados / ((m.ahora - filas[0][0]) / DIA);
+      return 'A ' + unaCifra(porDia) + ' por día llegaría el ' + fechaNumerica.format(m.ahora + ((META_SUBS - c.subs) / porDia) * DIA) + '.';
     }
+  }
+  return '';
+}
+
+function pintarInsignias(m) {
+  const cubos = cubosDeVistas(m, '24h');
+  const netos = netosDeSubs(m);
+  const ventana = ventanaDeUnDia(m);
+  const deCanal = {};
+  for (const v of m.videos) deCanal[v.id] = v.ci;
+  const ultimaHora = CANALES.map(() => 0);
+  for (const id in m.h1) if (ultimaHora[deCanal[id]] !== undefined) ultimaHora[deCanal[id]] += Number(m.h1[id]) || 0;
+
+  for (const c of m.canales) {
+    const bloque = document.querySelector('.insignia[data-canal="' + c.id + '"]');
+    if (!bloque) continue;
+    const campo = (nombre) => $('[data-campo="' + nombre + '"]', bloque);
+    bloque.querySelectorAll('[data-campo="canal"]').forEach((a) => { a.href = c.url; });
+    const logo = campo('logo');
+    if (c.logo && logo.getAttribute('src') !== c.logo) { logo.src = c.logo; logo.hidden = false; }
+    if (c.falta) { campo('aviso').textContent = 'YouTube no devolvió este canal en la última lectura; se muestran las cifras anteriores.'; continue; }
+    campo('aviso').textContent = '';
+
+    ponerCifra(campo('subs'), c.subs);
+    reemplazar(campo('subs-delta'), m.bitacoraDesde ? (netos[c.ci] ? [crear('strong', null, conSigno(netos[c.ci])), ' ' + ventana] : ['Sin cambio ' + ventana]) : []);
+
+    const a = analiticaDe(m, c.ci);
+    medidor(campo('meta-subs'), c.subs, META_SUBS, 'Meta de suscriptores', ritmoDeSubs(m, c));
+    if (a) medidor(campo('meta-horas'), Math.round(a.horasLargos365), META_HORAS, 'Meta de horas de largos',
+      'Últimos 12 meses. Los Shorts suman aparte ' + fmt(Math.round(a.horas365 - a.horasLargos365)) + ' horas, que no cuentan para esta meta.');
+    else reemplazar(campo('meta-horas'), [crear('p', { clase: 'meta-pie' }, 'Las horas de reproducción llegan con la primera lectura de YouTube Analytics.')]);
+
+    const vistas24 = sumar(cubos.map((x) => x.valores[c.ci]));
+    const datos = [
+      ['vistas en 24 horas', m.bitacoraDesde ? fmt(vistas24) : '–'],
+      ['en la última hora', m.bitacoraDesde ? fmt(ultimaHora[c.ci]) : '–'],
+      ['vistas en 28 días', a ? fmt(a.vistas28) : '–'],
+      ['horas vistas en 28 días', a ? fmt(Math.round(a.minutos28 / 60)) : '–'],
+    ];
+    reemplazar(campo('datos'), datos.map((d) => crear('div', null, crear('dt', null, d[0]), crear('dd', null, d[1]))));
+
+    // Vistas por día de los últimos 30 días, de Analytics.
+    const dias = a ? a.dias : [];
+    const figura = campo('dias');
+    figura.hidden = dias.length < 2;
+    if (dias.length >= 2) {
+      const valores = dias.map((d) => d[1]);
+      reemplazar($('.ins-traza', figura), [trazaDeColumnas(valores)]);
+      const mejor = dias.reduce((x, d) => (d[1] > x[1] ? d : x), dias[0]);
+      $('figcaption', figura).textContent = 'Vistas por día, últimos ' + dias.length + ' días. Mejor día: ' + fmt(mejor[1]) + ', el ' + diaYMes.format(fechaLocal(mejor[0])) + '.';
+    }
+
+    const caja = campo('ultimo');
+    const v = c.ultimoLargo || c.ultimo;
+    if (!v) { reemplazar(caja, [crear('p', { clase: 'ultimo-dato' }, 'Sin videos públicos.')]); caja.dataset.video = ''; continue; }
     if (caja.dataset.video !== v.id) {
       caja.dataset.video = v.id;
       reemplazar(caja, [
-        crear('h3', null, 'Lo último'),
-        crear('div', { clase: 'ultimo' },
-          miniatura(v, 'ultimo-mini', 'hq720'),
-          crear('div', { clase: 'ultimo-texto' },
-            crear('p', { clase: 'ultimo-titulo' }, enlaceExterno(v.url, v.titulo)),
-            crear('p', { clase: 'ultimo-dato' }))),
+        crear('h3', null, v.corto ? 'Último Short' : 'Último largo'),
+        crear('div', { clase: 'ultimo' }, miniatura(v, 'ultimo-mini', 'hq720'),
+          crear('div', { clase: 'ultimo-texto' }, crear('p', { clase: 'ultimo-titulo' }, enlaceExterno(v.url, v.titulo)), crear('p', { clase: 'ultimo-dato' }))),
       ]);
     }
+    const an = a && a.videos ? a.videos[v.id] : null;
     reemplazar($('.ultimo-dato', caja), [
-      (v.corto ? 'Short de ' : 'Video de ') + duracion(v.seg) + ', hace ' + lapso(m.ahora - v.publicado) + '. ',
+      duracion(v.seg) + ', hace ' + lapso(m.ahora - v.publicado) + '. ',
       cifraDeVideo(v, cuantos(v.vistas, 'vista', 'vistas'), 'analytics/tab-overview/period-default'),
-      m.h1[v.id] > 0 ? ', ' + fmt(m.h1[v.id]) + ' en la última hora' : '', '.',
+      m.h24[v.id] > 0 ? ', ' + fmt(m.h24[v.id]) + ' en 24 horas' : '',
+      an && an[3] ? '. Vista media: ' + duracion(an[2]) + ' (' + unaCifra(an[3]) + ' %)' : '', '.',
     ]);
   }
 }
+
+// Los cinco videos que más vistas ganaron en la última hora o, si ninguno se
+// movió, en las últimas 24.
+function pintarMueve(m) {
+  const porHora = m.videos.some((v) => m.h1[v.id] > 0);
+  const medida = (v) => Number((porHora ? m.h1 : m.h24)[v.id]) || 0;
+  const lista = m.videos.filter((v) => medida(v) > 0).sort((a, b) => medida(b) - medida(a) || b.publicado - a.publicado).slice(0, 5);
+  const ventana = ventanaDeUnDia(m);
+  $('#mueve-nota').textContent = lista.length
+    ? (porHora ? 'Vistas ganadas en la última hora.' : conPunto('En la última hora no se movió ningún contador: van las vistas ganadas ' + ventana))
+    : (m.bitacoraDesde ? conPunto('Ningún contador se movió ' + ventana) : 'Aparece con las próximas lecturas de Vigía.');
+  const tope = lista.length ? medida(lista[0]) : 1;
+  reemplazar($('#mueve-lista'), lista.map(function (v) {
+    const c = m.canales[v.ci];
+    const enElDia = porHora && m.h24[v.id] > 0 ? fmt(m.h24[v.id]) + ' en 24 horas' : fmt(v.vistas) + ' en total';
+    return crear('li', { datos: { serie: c.clave } },
+      miniatura(v, 'mini', 'mqdefault'),
+      crear('div', { clase: 'mueve-texto' },
+        enlaceExterno(v.url, v.titulo, { clase: 'video-titulo' }),
+        crear('span', { clase: 'video-dato' }, crear('span', { clase: 'clave' }), c.nombre + ' · ' + (v.corto ? 'Short' : 'Largo') + ' · ' + publicadoHace(m, v))),
+      crear('div', { clase: 'mueve-cifra' },
+        crear('strong', null, '+' + fmt(medida(v))),
+        crear('span', { clase: 'barra', 'aria-hidden': 'true' }, crear('span', { estilo: { width: Math.max(3, Math.round(100 * medida(v) / tope)) + '%' } })),
+        crear('span', { clase: 'tenue' }, enElDia)));
+  }));
+}
+
+/* ---------- Crecimiento: gráficas de YouTube Analytics ---------- */
+
+function cubosDeAnalytics(m, indice) {
+  const fechas = new Set();
+  for (const ci in CANALES) { const a = analiticaDe(m, Number(ci)); if (a) for (const d of a.dias) fechas.add(d[0]); }
+  const lista = Array.from(fechas).sort();
+  return lista.map(function (f, i) {
+    const t = fechaLocal(f).getTime();
+    return {
+      t: t, fin: i + 1 < lista.length ? fechaLocal(lista[i + 1]).getTime() : t + DIA,
+      valores: CANALES.map(function (c, ci) {
+        const a = analiticaDe(m, ci);
+        const d = a ? a.dias.find((x) => x[0] === f) : null;
+        return d ? Math.max(0, Number(indice(d)) || 0) : 0;
+      }),
+    };
+  });
+}
+
+function graficaDeAnalytics(m, id, indice, cfg) {
+  const cubos = cubosDeAnalytics(m, indice);
+  const seccion = $('#' + id);
+  seccion.hidden = !m.analytics;
+  if (!cubos.length) return;
+  const totales = CANALES.map((c, ci) => sumar(cubos.map((x) => x.valores[ci])));
+  $('#' + id + '-nota').textContent = cfg.nota(sumar(totales), cubos.length);
+  reemplazar($('#' + id + '-leyenda'), m.canales.map((c) => itemDeLeyenda(c, '', fmt(totales[c.ci]))));
+  graficaColumnas($('#' + id + '-lienzo'), cubos, {
+    descripcion: cfg.descripcion,
+    desde: 0, marcas: [], vacio: 'Sin datos de Analytics en este período.',
+    titulo: (c) => diaCompleto.format(c.t),
+    rotulo: (c) => diaYMes.format(c.t),
+    conRotulo: (c, i, w) => (cubos.length - 1 - i) % (w < 420 ? 7 : 5) === 0,
+  });
+  reemplazar($('#' + id + '-tabla'), [tablaDeDatos(
+    [{ texto: 'Día' }].concat(CANALES.map((c) => ({ texto: c.nombre, num: true })), [{ texto: 'Total', num: true }]),
+    cubos.slice().reverse().map((c) => [diaCompleto.format(c.t)].concat(c.valores.map(fmt), [fmt(sumar(c.valores))])))]);
+}
+
+function pintarAnalytics(m) {
+  const leido = m.analytics ? ' Lectura de YouTube Analytics del ' + fechaNumerica.format(m.analytics.leido) + ' a ' + laHora(m.analytics.leido) + '; los dos últimos días suelen venir incompletos.' : '';
+  graficaDeAnalytics(m, 'an-vistas', (d) => d[1], {
+    descripcion: 'Vistas por día y canal, según YouTube Analytics. Con las flechas se recorre cada día.',
+    nota: (total, dias) => cuantos(total, 'vista', 'vistas') + ' en ' + dias + ' días.' + leido,
+  });
+  graficaDeAnalytics(m, 'an-horas', (d) => Math.round(d[2] / 60), {
+    descripcion: 'Horas vistas por día y canal, según YouTube Analytics.',
+    nota: (total, dias) => cuantos(total, 'hora vista', 'horas vistas') + ' en ' + dias + ' días, largos y Shorts juntos.',
+  });
+  graficaDeAnalytics(m, 'an-subs', (d) => d[3], {
+    descripcion: 'Suscriptores ganados por día y canal, según YouTube Analytics.',
+    nota: function (total, dias) {
+      const perdidos = sumar(CANALES.map((c, ci) => { const a = analiticaDe(m, ci); return a ? sumar(a.dias.map((d) => d[4])) : 0; }));
+      return cuantos(total, 'suscriptor ganado', 'suscriptores ganados') + ' y ' + cuantos(perdidos, 'perdido', 'perdidos') + ' en ' + dias + ' días.';
+    },
+  });
+}
+
+/* ---------- Videos: retención ---------- */
+
+function graficaRetencion(lienzo, curva, clave, nombre) {
+  const ancho = Math.max(240, Math.round(lienzo.clientWidth)), alto = 170;
+  const tope = Math.max(1, Math.ceil(Math.max(...curva.map((p) => p[1])) * 5) / 5);
+  const margen = { izq: 40, der: 10, arr: 12, aba: 24 };
+  const w = ancho - margen.izq - margen.der, h = alto - margen.arr - margen.aba;
+  const px = (x) => margen.izq + x * w, py = (y) => margen.arr + h - (y / tope) * h;
+  const raiz = trazar('svg', { viewBox: '0 0 ' + ancho + ' ' + alto, role: 'img', tabindex: '0', 'aria-label': 'Retención de ' + nombre + '. Con las flechas se recorre el video.' });
+  for (const v of marcasEntre(0, tope, tope > 1 ? 0.5 : 0.25)) {
+    raiz.append(trazar('line', { class: v === 0 ? 'base' : 'rejilla', x1: margen.izq, x2: ancho - margen.der, y1: Math.round(py(v)) + 0.5, y2: Math.round(py(v)) + 0.5 }),
+      trazar('text', { x: margen.izq - 6, y: py(v) + 4, 'text-anchor': 'end' }, fmt(Math.round(v * 100)) + ' %'));
+  }
+  for (const x of [0, 0.5, 1]) raiz.append(trazar('text', { x: px(x), y: alto - 6, 'text-anchor': x === 0 ? 'start' : x === 1 ? 'end' : 'middle' }, x === 0 ? 'inicio' : x === 1 ? 'final' : 'mitad'));
+  const d = curva.map((p, i) => (i ? 'L' : 'M') + px(p[0]).toFixed(1) + ',' + py(p[1]).toFixed(1)).join('');
+  raiz.append(trazar('path', { class: 'trazo', 'data-serie': clave, d: d }));
+  const mira = trazar('line', { class: 'mira', y1: margen.arr, y2: py(0), visibility: 'hidden' });
+  const punto = trazar('circle', { class: 'punto', 'data-serie': clave, r: 4.5, visibility: 'hidden' });
+  raiz.append(mira, punto);
+  const globo = globoDe(lienzo);
+  globo.hidden = true;
+  interaccion(raiz, lienzo, {
+    ancho: ancho, primera: 0, ultima: curva.length - 1,
+    dePuntero: (x) => Math.max(0, Math.min(curva.length - 1, Math.round(((x - margen.izq) / w) * (curva.length - 1)))),
+    vecina: (i, salto) => Math.max(0, Math.min(curva.length - 1, i + salto * 5)),
+    mover: function (i) {
+      if (i === null) { mira.setAttribute('visibility', 'hidden'); punto.setAttribute('visibility', 'hidden'); globo.hidden = true; return; }
+      const p = curva[i], x = px(p[0]);
+      mira.setAttribute('x1', x); mira.setAttribute('x2', x); mira.setAttribute('visibility', 'visible');
+      punto.setAttribute('cx', x); punto.setAttribute('cy', py(p[1])); punto.setAttribute('visibility', 'visible');
+      reemplazar(globo, [crear('p', { clase: 'globo-titulo' }, 'Al ' + fmt(Math.round(p[0] * 100)) + ' % del video'),
+        crear('ul', null, filaDeGlobo(clave, fmt(Math.round(p[1] * 100)) + ' %', 'siguen viendo'))]);
+      colocarGlobo(lienzo, globo, x * (lienzo.clientWidth / ancho), 0);
+    },
+  });
+  const previo = $('svg', lienzo);
+  if (previo) previo.replaceWith(raiz); else lienzo.prepend(raiz);
+}
+
+function pintarRetencion(m) {
+  const seccion = $('#retencion');
+  const fichas = [];
+  for (const c of m.canales) {
+    const a = analiticaDe(m, c.ci);
+    for (const r of a ? a.retencion : []) fichas.push({ c: c, r: r, v: m.videos.find((x) => x.id === r.id), an: a.videos[r.id] });
+  }
+  seccion.hidden = !fichas.length;
+  if (!fichas.length) return;
+  const firma = fichas.map((f) => f.r.id + f.r.curva.length).join('|') + '|' + Math.round($('#retencion-lista').clientWidth / 40);
+  if (seccion.dataset.firma === firma) return;
+  seccion.dataset.firma = firma;
+  reemplazar($('#retencion-lista'), fichas.map(function (f) {
+    const titulo = f.v ? f.v.titulo : 'Video ' + f.r.id;
+    const url = f.v ? f.v.url : 'https://www.youtube.com/watch?v=' + encodeURIComponent(f.r.id);
+    const lienzo = crear('div', { clase: 'lienzo lienzo-chico' });
+    const li = crear('li', { datos: { serie: f.c.clave } },
+      crear('p', { clase: 'video-dato' }, crear('span', { clase: 'clave' }), f.c.nombre),
+      crear('p', { clase: 'ret-titulo' }, enlaceExterno(url, titulo)),
+      f.an ? crear('p', { clase: 'video-dato' }, cuantos(f.an[0], 'vista', 'vistas') + ' en 12 meses · vista media ' + duracion(f.an[2]) + ' (' + unaCifra(f.an[3]) + ' %)') : null,
+      lienzo);
+    requestAnimationFrame(() => graficaRetencion(lienzo, f.r.curva, f.c.clave, titulo));
+    return li;
+  }));
+}
+
+/* ---------- Vistas: Hoy, Crecimiento, Videos y Radar ---------- */
+
+function mostrarVista(nombre, desdeHistoria) {
+  if (VISTAS.indexOf(nombre) < 0) nombre = 'hoy';
+  estado.vista = nombre;
+  for (const v of document.querySelectorAll('.vista')) v.hidden = v.dataset.vista !== nombre;
+  for (const a of document.querySelectorAll('.pestanas a')) {
+    if (a.dataset.vista === nombre) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  }
+  if (!desdeHistoria && location.hash !== '#' + nombre) history.replaceState(null, '', '#' + nombre);
+  // Las gráficas miden su contenedor: se dibujan cuando la vista ya está visible.
+  if (estado.modelo) pintar();
+}
+
+function vistaDeEnlace(hash) {
+  const id = (hash || '').replace('#', '');
+  if (VISTAS.indexOf(id) >= 0) return id;
+  const nodo = id ? document.getElementById(id) : null;
+  const vista = nodo ? nodo.closest('.vista') : null;
+  return vista ? vista.dataset.vista : 'hoy';
+}
+
 
 /* ---------- Gráficas ---------- */
 
@@ -1120,131 +1174,6 @@ function pintarTablero(m) {
   return inicio;
 }
 
-/* ---------- Tabla de videos ---------- */
-
-const COMPARAR = {
-  titulo: (a, b) => a.titulo.localeCompare(b.titulo, 'es'),
-  canal: (a, b) => a.ci - b.ci,
-  publicado: (a, b) => a.publicado - b.publicado,
-  vistas: (a, b) => a.vistas - b.vistas,
-  periodo: (a, b) => (a.ganado === null ? -1 : a.ganado) - (b.ganado === null ? -1 : b.ganado),
-  likes: (a, b) => a.likes - b.likes,
-  coms: (a, b) => a.coms - b.coms,
-};
-
-function publicadoHace(m, v) {
-  const edad = m.ahora - v.publicado;
-  return edad < 7 * DIA ? 'hace ' + lapso(edad) : fechaNumerica.format(v.publicado);
-}
-
-// Familia de temas de un largo y la demanda medida de esa familia. La mediana
-// de la familia son vistas acumuladas durante años por los primeros resultados
-// de la búsqueda, así que no se divide entre las vistas de un video nuevo: esa
-// proporción siempre salía por debajo del 1 % y no decía nada del video.
-function familiaDelVideo(v) {
-  if (v.corto) return null;
-  const familia = (FAMILIAS[v.ci] || []).find((f) => f.patron.test(v.titulo));
-  if (!familia) return null;
-  return crear('span', { clase: 'video-dato video-familia' },
-    'Familia «' + familia.nombre + '». Demanda del tema: ' + fmt(familia.mediana) + ' vistas de mediana en la búsqueda');
-}
-
-function pintarVideos(m, inicio) {
-  const periodo = PERIODOS[estado.periodo];
-  const cambios = cambiosDe(m);
-  const lista = m.videos
-    .filter((v) => estado.canal === '' || v.ci === Number(estado.canal))
-    .filter((v) => estado.tipo === '' || (estado.tipo === 'short') === v.corto);
-  for (const v of lista) v.ganado = ganado(m, v, estado.periodo, inicio);
-  const comparar = COMPARAR[estado.orden.campo];
-  lista.sort((a, b) => estado.orden.sentido * comparar(a, b) || b.publicado - a.publicado);
-
-  const cuerpo = $('#videos-cuerpo');
-  const foco = document.activeElement && cuerpo.contains(document.activeElement) ? document.activeElement.dataset.foco : '';
-  const dueno = esDueno();
-  reemplazar(cuerpo, lista.map(function (v) {
-    const c = m.canales[v.ci];
-    const estudio = 'https://studio.youtube.com/video/' + v.id + '/';
-    const dato = [(v.corto ? 'Short de ' : 'Video de ') + duracion(v.seg),
-      crear('span', { clase: 'solo-movil' }, ', ', enlaceExterno(c.url, c.nombre), ', ' + publicadoHace(m, v))];
-    if (dueno) dato.push('. ', enlaceExterno(estudio + 'edit', 'Editar en Studio', { datos: { foco: 'e' + v.id } }));
-    const sube = v.ganado === null ? '–' : (v.ganado > 0 ? '+' : '') + fmt(v.ganado);
-    const ahora = m.h1[v.id] > 0 ? crear('span', { clase: 'video-ahora' }, '+' + fmt(m.h1[v.id]) + ' en la última hora') : null;
-    return crear('tr', null,
-      crear('td', { clase: 'celda-video' }, crear('div', { clase: 'video' },
-        miniatura(v, 'mini', 'mqdefault'),
-        crear('div', { clase: 'video-texto' },
-          enlaceExterno(v.url, v.titulo, { clase: 'video-titulo', datos: { foco: 't' + v.id } }),
-          crear('span', { clase: 'video-dato' }, dato), ahora,
-          familiaDelVideo(v),
-          cambios.filter((x) => x.id === v.id).map((x) => crear('span', { clase: 'video-dato video-cambio' }, fraseDeCambio(m, x)))))),
-      crear('td', { clase: 'solo-ancho' }, enlaceExterno(c.url, [c.logo ? crear('img', { src: c.logo, alt: '', width: 24, height: 24, loading: 'lazy' }) : null, c.nombre], { clase: 'celda-canal', datos: { foco: 'c' + v.id } })),
-      crear('td', { clase: 'solo-ancho' }, crear('time', { datetime: new Date(v.publicado).toISOString(), title: fechaConHora.format(v.publicado) }, publicadoHace(m, v))),
-      crear('td', { clase: 'num', datos: { etiqueta: 'vistas' } }, dueno ? enlaceExterno(estudio + 'analytics/tab-overview/period-default', fmt(v.vistas), { datos: { foco: 'v' + v.id } }) : fmt(v.vistas)),
-      crear('td', { clase: 'num ' + (v.ganado ? 'sube' : 'nada'), datos: { etiqueta: 'en ' + periodo.nombre } }, sube),
-      crear('td', { clase: 'num', datos: { etiqueta: 'me gusta' } }, dueno ? enlaceExterno(estudio + 'analytics/tab-engagement/period-default', fmt(v.likes), { datos: { foco: 'l' + v.id } }) : fmt(v.likes)),
-      crear('td', { clase: 'num', datos: { etiqueta: v.coms === 1 ? 'comentario' : 'comentarios' } }, dueno ? enlaceExterno(estudio + 'comments', fmt(v.coms), { datos: { foco: 'm' + v.id } }) : fmt(v.coms)));
-  }));
-  if (foco) {
-    const mismo = cuerpo.querySelector('[data-foco="' + foco + '"]');
-    if (mismo) mismo.focus({ preventScroll: true });
-  }
-
-  const conFiltro = estado.canal !== '' || estado.tipo !== '';
-  $('#videos-vacio').hidden = lista.length > 0;
-  $('#videos-vacio-texto').textContent = conFiltro ? 'Sin videos con ese filtro.' : 'YouTube no devolvió videos en la última lectura.';
-  $('#quitar-filtros').hidden = !conFiltro;
-  $('#tabla-videos').hidden = lista.length === 0;
-  const recortado = m.canales.some((c) => c.total > m.videos.filter((v) => v.ci === c.ci).length);
-  $('#videos-nota').textContent = lista.length === 0 && !conFiltro ? '' : cuantos(lista.length, 'video', 'videos') + (recortado ? ', de los 15 más recientes de cada canal.' : '.')
-    + (lista.some((v) => !v.corto) ? ' Cada largo muestra su familia de temas, asignada por las palabras del título, y la demanda de esa familia: la mediana de vistas acumuladas por los 15 primeros resultados de la búsqueda de YouTube, medida el ' + FAMILIAS_FECHA + '. Mide el interés por el tema y no es una meta de vistas para un video nuevo.' : '');
-  $('#orden-periodo').textContent = 'Más vistas en ' + periodo.nombre;
-
-  for (const th of document.querySelectorAll('#tabla-videos th')) {
-    if (th.dataset.campo === estado.orden.campo) th.setAttribute('aria-sort', estado.orden.sentido > 0 ? 'ascending' : 'descending');
-    else th.removeAttribute('aria-sort');
-  }
-  const selector = $('#orden-movil');
-  selector.value = [].some.call(selector.options, (o) => o.value === estado.orden.campo) ? estado.orden.campo : 'publicado';
-}
-
-/* ---------- Pintado general ---------- */
-
-function pintarDatos() {
-  const m = estado.modelo;
-  if (!m) return;
-  const inicio = pintarTablero(m);
-  pintarVideos(m, inicio);
-}
-function pintar() {
-  const m = estado.modelo;
-  if (!m) return;
-  // Antes de dibujar: una gráfica en un contenedor oculto mide 0 de ancho.
-  $('#datos').hidden = false;
-  $('#radar').hidden = false;
-  pintarCanales(m);
-  pintarDatos();
-  // Cada sección que sigue es independiente: si una falla, el resto de la página queda dibujado.
-  try { pintarAhora(m); } catch (error) { console.error('ahora: ' + error); }
-  try { pintarTendencias(m); } catch (error) { console.error('tendencias: ' + error); $('#tendencias').hidden = true; }
-  try { pintarNichos(m); } catch (error) { console.error('nichos: ' + error); $('#nichos').hidden = true; }
-  try { pintarComentarios(m); } catch (error) { console.error('comentarios: ' + error); $('#comentarios').hidden = true; }
-  try { pintarCalendario(m); } catch (error) { console.error('calendario: ' + error); $('#calendario').hidden = true; }
-}
-/* ---------- Cambios de título y de miniatura ---------- */
-
-// Los de título los anota Atalaya Vigía; los de miniatura, la tarea del
-// repositorio, que compara la imagen cada hora.
-function cambiosDe(m) {
-  const lista = m.cambios.map((f) => ({ t: f[0], id: f[2], tipo: f[3], despues: f[5] || '' }));
-  const externos = estado.externos && Array.isArray(estado.externos.cambios) ? estado.externos.cambios : [];
-  for (const f of externos) if (Array.isArray(f) && f.length >= 3) lista.push({ t: f[0], id: f[1], tipo: f[2], despues: '' });
-  const propios = {};
-  for (const v of m.videos) propios[v.id] = v;
-  return lista.filter((c) => propios[c.id] && c.t > m.ahora - 30 * DIA).sort((a, b) => a.t - b.t)
-    .map((c) => Object.assign(c, { video: propios[c.id] }));
-}
-
 // Vistas por día de un video antes y después de un momento, con la lectura
 // diaria. Entre dos lecturas se reparte parejo, así que es una aproximación.
 function ritmoAlrededor(m, v, t) {
@@ -1315,7 +1244,8 @@ function filaDeVideoAjeno(m, v, puesto, tope, extra) {
 }
 
 function panelDeReferencia(m, t) {
-  const filas = t.ref.map((v) => ({ v: v, razon: v.med > 0 ? v.n / v.med : 0 })).sort((a, b) => b.razon - a.razon);
+  const filas = t.ref.filter((v) => !estado.tendCanal || v.ni === estado.tendCanal)
+    .map((v) => ({ v: v, razon: v.med > 0 ? v.n / v.med : 0 })).sort((a, b) => b.razon - a.razon);
   if (!filas.length) return [crear('p', { clase: 'vacio' }, 'Los canales de referencia no publicaron videos largos en los últimos 10 días.')];
   // La barra llega a 3 veces la mediana; la raya marca 1 vez.
   const tope = 3;
@@ -1327,7 +1257,7 @@ function panelDeReferencia(m, t) {
       crear('span', { clase: 'medidor-razon', 'aria-hidden': 'true' }, crear('span', { estilo: { width: Math.max(1.5, Math.min(100, (100 * f.razon) / tope)).toFixed(1) + '%' } })),
       (pasa ? '▲ ' : '') + frente + ' de su canal (' + fmt(f.v.med) + ')'));
   }));
-  const canales = t.canales.slice().sort((a, b) => b.subs - a.subs);
+  const canales = t.canales.filter((c) => !estado.tendCanal || c.nicho === estado.tendCanal).sort((a, b) => b.subs - a.subs);
   return [lista, crear('p', { clase: 'tend-pie' },
     cuantos(canales.length, 'canal', 'canales') + ': ',
     canales.map((c, i) => [i ? ', ' : '', enlaceExterno('https://www.youtube.com/channel/' + encodeURIComponent(c.id), c.nombre), ' (' + fmt(c.subs) + ')']), '.')];
@@ -1382,7 +1312,7 @@ function pintarTendencias(m, forzar) {
   if (!t && estado.tend !== 'google') { estado.tend = 'google'; marcar('tend', 'google'); }
   // La sección solo se rehace cuando cambia la lectura o un filtro: así no se
   // pierde el lugar ni el foco con la lectura de cada minuto.
-  const firma = [estado.tend, estado.tendFormato, estado.tendSin, estado.pais, t ? t.leido : 0, externos ? externos.leido : 0].join('|');
+  const firma = [estado.tend, estado.tendCanal, estado.tendFormato, estado.tendSin, estado.pais, t ? t.leido : 0, externos ? externos.leido : 0].join('|');
   if (!forzar && firma === estado.firmaTend) return;
   estado.firmaTend = firma;
 
@@ -1396,6 +1326,7 @@ function pintarTendencias(m, forzar) {
   $('#tend-nota').textContent = notas[estado.tend] + (leido ? ' ' + conPunto('Se lee cada hora; última lectura, ' + fechaConHora.format(leido)) : '');
 
   const barra = [];
+  if (estado.tend === 'ref') barra.push(filtroDe('Nicho', 'tend-canal', [['', 'Los dos'], ['kr_ref', 'Autos'], ['bdp_ref', 'Relatos']], estado.tendCanal));
   if (estado.tend === 'yt') {
     barra.push(filtroDe('Formato', 'tend-formato', [['', 'Todos'], ['largo', 'Largos'], ['short', 'Shorts']], estado.tendFormato));
     barra.push(filtroDe('Categorías', 'tend-sin', [['', 'Todas'], ['1', 'Sin música ni videojuegos']], estado.tendSin));
@@ -1411,8 +1342,6 @@ function pintarTendencias(m, forzar) {
   else cuerpo = panelDeReferencia(m, t);
   reemplazar($('#tend-cuerpo'), cuerpo);
 }
-
-/* ---------- Calendario ---------- */
 
 /* ---------- Comentarios de los canales en otros videos ---------- */
 
@@ -1463,54 +1392,6 @@ function pintarComentarios(m) {
       })) : null);
   }));
 }
-
-function pintarCalendario(m) {
-  const hoy = new Date(m.ahora);
-  hoy.setHours(0, 0, 0, 0);
-  const filas = CALENDARIO.map((e) => ({ e: e, inicio: fechaLocal(e.dia), fin: fechaLocal(e.hasta || e.dia) }))
-    .filter((f) => f.fin >= hoy).sort((a, b) => a.inicio - b.inicio || a.fin - b.fin);
-  $('#calendario').hidden = filas.length === 0;
-  if (!filas.length) return;
-  $('#cal-nota').textContent = 'Fechas que mueven búsquedas en los temas de los canales. La demanda es la mediana de vistas de los 15 primeros resultados de la búsqueda de YouTube, medida el ' + FAMILIAS_FECHA + '.';
-  const tope = Math.max.apply(null, filas.map((f) => f.e.demanda)) || 1;
-  const conAno = (d) => (d.getFullYear() === hoy.getFullYear() ? diaYMes.format(d) : diaYMes.format(d) + ' ' + d.getFullYear());
-  reemplazar($('#cal-lista'), filas.map(function (f) {
-    const c = CANALES[f.e.ci];
-    const faltan = Math.round((f.inicio - hoy) / DIA);
-    const cuando = faltan > 1 ? 'faltan ' + faltan + ' días' : faltan === 1 ? 'mañana' : faltan === 0 ? 'hoy' : 'en curso';
-    const mismoMes = f.inicio.getMonth() === f.fin.getMonth() && f.inicio.getFullYear() === f.fin.getFullYear();
-    const fecha = f.fin > f.inicio ? (mismoMes ? f.inicio.getDate() : conAno(f.inicio)) + ' al ' + conAno(f.fin) : conAno(f.inicio);
-    return crear('li', { datos: { serie: c.clave }, clase: faltan <= 14 ? 'cerca' : null },
-      crear('div', { clase: 'cal-fecha' },
-        crear('time', { datetime: f.e.dia }, fecha),
-        crear('span', { clase: 'cal-cuando' }, cuando)),
-      crear('div', { clase: 'cal-que' },
-        crear('strong', null, f.e.que),
-        crear('span', { clase: 'video-dato' }, crear('span', { clase: 'clave' }), c.nombre)),
-      crear('div', { clase: 'cal-demanda' },
-        f.e.demanda ? [crear('strong', null, fmt(f.e.demanda)),
-          crear('span', { clase: 'barra', 'aria-hidden': 'true' }, crear('span', { estilo: { width: Math.max(2, Math.round((100 * f.e.demanda) / tope)) + '%' } }))]
-          : crear('span', { clase: 'tenue' }, 'sin medir')));
-  }));
-}
-
-/* ---------- Datos externos ---------- */
-
-async function leerExternos() {
-  try {
-    const respuesta = await fetch(EXTERNOS, { cache: 'no-store', credentials: 'omit' });
-    if (!respuesta.ok) throw new Error('código ' + respuesta.status);
-    const datos = await respuesta.json();
-    if (!datos || typeof datos !== 'object') throw new Error('respuesta vacía');
-    estado.externos = datos;
-    guardar('externos', JSON.stringify(datos));
-    if (estado.modelo) { pintarDatos(); pintarTendencias(estado.modelo); }
-  } catch (error) {
-    // Sin esta lectura la página sigue: faltan las búsquedas de Google y los cambios de miniatura.
-    console.warn('externos: ' + error.message);
-  }
-}
-
 
 /* ---------- Nichos: interés por familias de temas ---------- */
 
@@ -1597,26 +1478,158 @@ function pintarNichos(m) {
   reemplazar($('#nichos-grupos'), grupos);
 }
 
+/* ---------- Tabla de videos ---------- */
+
+const COMPARAR = {
+  titulo: (a, b) => a.titulo.localeCompare(b.titulo, 'es'),
+  canal: (a, b) => a.ci - b.ci,
+  publicado: (a, b) => a.publicado - b.publicado,
+  vistas: (a, b) => a.vistas - b.vistas,
+  periodo: (a, b) => (a.ganado === null ? -1 : a.ganado) - (b.ganado === null ? -1 : b.ganado),
+  visto: (a, b) => (a.visto === null ? -1 : a.visto) - (b.visto === null ? -1 : b.visto),
+  likes: (a, b) => a.likes - b.likes,
+  coms: (a, b) => a.coms - b.coms,
+};
+
+function publicadoHace(m, v) {
+  const edad = m.ahora - v.publicado;
+  return edad < 7 * DIA ? 'hace ' + lapso(edad) : fechaNumerica.format(v.publicado);
+}
+
+function pintarVideos(m, inicio) {
+  const periodo = PERIODOS[estado.periodo];
+  const cambios = cambiosDe(m);
+  const lista = m.videos
+    .filter((v) => estado.canal === '' || v.ci === Number(estado.canal))
+    .filter((v) => estado.tipo === '' || (estado.tipo === 'short') === v.corto);
+  for (const v of lista) {
+    v.ganado = ganado(m, v, estado.periodo, inicio);
+    const a = analiticaDe(m, v.ci);
+    v.an = a && a.videos ? a.videos[v.id] || null : null;
+    v.visto = v.an ? v.an[3] : null;
+  }
+  const comparar = COMPARAR[estado.orden.campo] || COMPARAR.publicado;
+  lista.sort((a, b) => estado.orden.sentido * comparar(a, b) || b.publicado - a.publicado);
+
+  const cuerpo = $('#videos-cuerpo');
+  const foco = document.activeElement && cuerpo.contains(document.activeElement) ? document.activeElement.dataset.foco : '';
+  const dueno = esDueno();
+  reemplazar(cuerpo, lista.map(function (v) {
+    const c = m.canales[v.ci];
+    const estudio = 'https://studio.youtube.com/video/' + v.id + '/';
+    const dato = [(v.corto ? 'Short de ' : 'Largo de ') + duracion(v.seg),
+      crear('span', { clase: 'solo-movil' }, ', ', c.nombre, ', ' + publicadoHace(m, v))];
+    if (dueno) dato.push('. ', enlaceExterno(estudio + 'edit', 'Editar en Studio', { datos: { foco: 'e' + v.id } }));
+    const sube = v.ganado === null ? '–' : (v.ganado > 0 ? '+' : '') + fmt(v.ganado);
+    const ahora = m.h1[v.id] > 0 ? crear('span', { clase: 'video-ahora' }, '+' + fmt(m.h1[v.id]) + ' en la última hora') : null;
+    const visto = v.an ? [crear('span', { clase: 'pct' }, unaCifra(v.an[3]) + ' %'), crear('span', { clase: 'tenue celda-sub' }, duracion(v.an[2]))] : '–';
+    return crear('tr', { datos: { serie: c.clave } },
+      crear('td', { clase: 'celda-video' }, crear('div', { clase: 'video' },
+        miniatura(v, 'mini', 'mqdefault'),
+        crear('div', { clase: 'video-texto' },
+          enlaceExterno(v.url, v.titulo, { clase: 'video-titulo', datos: { foco: 't' + v.id } }),
+          crear('span', { clase: 'video-dato' }, dato), ahora,
+          cambios.filter((x) => x.id === v.id).map((x) => crear('span', { clase: 'video-dato video-cambio' }, fraseDeCambio(m, x)))))),
+      crear('td', { clase: 'solo-ancho' }, crear('span', { clase: 'celda-canal' }, crear('span', { clase: 'clave' }), c.corto)),
+      crear('td', { clase: 'solo-ancho' }, crear('time', { datetime: new Date(v.publicado).toISOString(), title: fechaConHora.format(v.publicado) }, publicadoHace(m, v))),
+      crear('td', { clase: 'num', datos: { etiqueta: 'vistas' } }, dueno ? enlaceExterno(estudio + 'analytics/tab-overview/period-default', fmt(v.vistas), { datos: { foco: 'v' + v.id } }) : fmt(v.vistas)),
+      crear('td', { clase: 'num ' + (v.ganado ? 'sube' : 'nada'), datos: { etiqueta: 'en ' + periodo.nombre } }, sube),
+      crear('td', { clase: 'num', datos: { etiqueta: 'visto en promedio' } }, visto),
+      crear('td', { clase: 'num', datos: { etiqueta: 'me gusta' } }, dueno ? enlaceExterno(estudio + 'analytics/tab-engagement/period-default', fmt(v.likes), { datos: { foco: 'l' + v.id } }) : fmt(v.likes)),
+      crear('td', { clase: 'num', datos: { etiqueta: v.coms === 1 ? 'comentario' : 'comentarios' } }, dueno ? enlaceExterno(estudio + 'comments', fmt(v.coms), { datos: { foco: 'm' + v.id } }) : fmt(v.coms)));
+  }));
+  if (foco) {
+    const mismo = cuerpo.querySelector('[data-foco="' + foco + '"]');
+    if (mismo) mismo.focus({ preventScroll: true });
+  }
+  const conFiltro = estado.canal !== '' || estado.tipo !== '';
+  $('#videos-vacio').hidden = lista.length > 0;
+  $('#videos-vacio-texto').textContent = conFiltro ? 'Sin videos con ese filtro.' : 'YouTube no devolvió videos en la última lectura.';
+  $('#quitar-filtros').hidden = !conFiltro;
+  $('#tabla-videos').hidden = lista.length === 0;
+  const recortado = m.canales.some((c) => c.total > m.videos.filter((v) => v.ci === c.ci).length);
+  $('#videos-nota').textContent = lista.length === 0 && !conFiltro ? '' : cuantos(lista.length, 'video', 'videos') + (recortado ? ', de los 15 más recientes de cada canal.' : '.')
+    + (m.analytics ? ' «Visto en promedio» es el porcentaje medio del video que se ve y la duración media de cada vista, de YouTube Analytics en los últimos 12 meses.' : '');
+  $('#orden-periodo').textContent = 'Más vistas en ' + periodo.nombre;
+  for (const th of document.querySelectorAll('#tabla-videos th')) {
+    if (th.dataset.campo === estado.orden.campo) th.setAttribute('aria-sort', estado.orden.sentido > 0 ? 'ascending' : 'descending');
+    else th.removeAttribute('aria-sort');
+  }
+  const selector = $('#orden-movil');
+  selector.value = [].some.call(selector.options, (o) => o.value === estado.orden.campo) ? estado.orden.campo : 'publicado';
+}
+
+/* ---------- Pintado general ---------- */
+
+function pintarDatos() {
+  const m = estado.modelo;
+  if (!m) return;
+  if (estado.vista === 'crecimiento') {
+    pintarTablero(m);
+    try { pintarAnalytics(m); } catch (error) { console.error('analytics: ' + error); }
+  }
+  if (estado.vista === 'videos') {
+    const inicio = cubosDeVistas(m, estado.periodo)[0].t;
+    pintarVideos(m, inicio);
+    try { pintarRetencion(m); } catch (error) { console.error('retención: ' + error); }
+  }
+}
+
+function pintar() {
+  const m = estado.modelo;
+  if (!m) return;
+  document.body.classList.add('con-datos');
+  // Cada parte es independiente: si una falla, el resto queda dibujado.
+  const partes = {
+    hoy: [pintarResumen, pintarInsignias, pintarMueve, pintarSenales],
+    radar: [pintarTendencias, pintarNichos, pintarComentarios],
+  };
+  for (const f of partes[estado.vista] || []) {
+    try { f(m); } catch (error) { console.error(f.name + ': ' + error); }
+  }
+  pintarDatos();
+  if (estado.vista === 'radar' && window.dibujarAtipicos) window.dibujarAtipicos();
+  for (const a of document.querySelectorAll('.radar-indice a')) { const s = document.getElementById(a.getAttribute('href').slice(1)); if (a.getAttribute('href') !== '#atipicos') a.hidden = !s || s.hidden; }
+}
+
+/* ---------- Cambios de título y de miniatura ---------- */
+
+function cambiosDe(m) {
+  const lista = m.cambios.map((f) => ({ t: f[0], id: f[2], tipo: f[3], despues: f[5] || '' }));
+  const externos = estado.externos && Array.isArray(estado.externos.cambios) ? estado.externos.cambios : [];
+  for (const f of externos) if (Array.isArray(f) && f.length >= 3) lista.push({ t: f[0], id: f[1], tipo: f[2], despues: '' });
+  const propios = {};
+  for (const v of m.videos) propios[v.id] = v;
+  return lista.filter((c) => propios[c.id] && c.t > m.ahora - 30 * DIA).sort((a, b) => a.t - b.t)
+    .map((c) => Object.assign(c, { video: propios[c.id] }));
+}
+
 /* ---------- Lectura ---------- */
 
-async function pedir() {
+async function pedir(ruta, etag) {
   const control = new AbortController();
   const tope = setTimeout(() => control.abort(), ESPERA_MS);
   try {
-    // Sin cabeceras propias: Apps Script no responde a la consulta previa de CORS.
-    const respuesta = await fetch(FUENTE, { signal: control.signal, cache: 'no-store', credentials: 'omit' });
-    if (!respuesta.ok) throw new Error('el servidor respondió con el código ' + respuesta.status);
+    const opciones = { signal: control.signal, cache: 'no-store', credentials: 'omit' };
+    if (etag) opciones.headers = { 'If-None-Match': etag };
+    const respuesta = await fetch(VIGIA + ruta, opciones);
+    if (respuesta.status === 304) return { igual: true };
+    if (!respuesta.ok) throw new Error('Vigía respondió con el código ' + respuesta.status);
     let datos;
-    try { datos = await respuesta.json(); } catch (error) { throw new Error('el servidor devolvió una respuesta que no se pudo interpretar'); }
-    if (!datos || !Array.isArray(datos.canales) || !Array.isArray(datos.videos)) throw new Error('la respuesta llegó sin los canales');
-    return datos;
+    try { datos = await respuesta.json(); } catch (error) { throw new Error('Vigía devolvió una respuesta que no se pudo interpretar'); }
+    return { datos: datos, etag: respuesta.headers.get('ETag') || '' };
   } catch (error) {
-    if (error.name === 'AbortError') throw new Error('el servidor tardó más de ' + ESPERA_MS / 1000 + ' segundos');
-    if (error instanceof TypeError) throw new Error(navigator.onLine === false ? 'este dispositivo no tiene conexión' : 'no hubo conexión con el servidor');
+    if (error.name === 'AbortError') throw new Error('Vigía tardó más de ' + ESPERA_MS / 1000 + ' segundos');
+    if (error instanceof TypeError) throw new Error(navigator.onLine === false ? 'este dispositivo no tiene conexión' : 'no hubo conexión con Vigía');
     throw error;
   } finally {
     clearTimeout(tope);
   }
+}
+
+function armarModelo() {
+  if (!estado.vivo) return;
+  estado.modelo = preparar(Object.assign({}, estado.panel || {}, estado.vivo));
 }
 
 function avanzarPulso(ms) {
@@ -1640,9 +1653,14 @@ async function leer() {
   estado.ultimoIntento = Date.now();
   const marca = $('#estado');
   try {
-    const datos = await pedir();
-    estado.modelo = preparar(datos);
-    guardar('datos', JSON.stringify(datos));
+    const tocaPanel = !estado.panel || Date.now() - estado.ultimoPanel >= CADA_PANEL_MS;
+    const [vivo, panel] = await Promise.all([pedir('/vivo'), tocaPanel ? pedir('/panel', estado.etagPanel) : Promise.resolve({ igual: true })]);
+    if (!vivo.datos || !Array.isArray(vivo.datos.canales)) throw new Error('la respuesta llegó sin los canales');
+    estado.vivo = vivo.datos;
+    if (tocaPanel) estado.ultimoPanel = Date.now();
+    if (panel.datos) { estado.panel = panel.datos; estado.etagPanel = panel.etag; guardar('panel', JSON.stringify(panel.datos)); }
+    guardar('vivo', JSON.stringify(vivo.datos));
+    armarModelo();
     pintar();
     marca.textContent = 'Leído a ' + laHora(estado.modelo.ahora);
     marca.classList.remove('falla');
@@ -1657,6 +1675,21 @@ async function leer() {
   programar(CADA_MS);
 }
 
+async function leerExternos() {
+  try {
+    const respuesta = await fetch(EXTERNOS, { cache: 'no-store', credentials: 'omit' });
+    if (!respuesta.ok) throw new Error('código ' + respuesta.status);
+    const datos = await respuesta.json();
+    if (!datos || typeof datos !== 'object') throw new Error('respuesta vacía');
+    estado.externos = datos;
+    guardar('externos', JSON.stringify(datos));
+    if (estado.modelo) { estado.firmaTend = ''; pintar(); }
+  } catch (error) {
+    // Sin esta lectura la página sigue: faltan las búsquedas de Google y los cambios de miniatura.
+    console.warn('externos: ' + error.message);
+  }
+}
+
 /* ---------- Controles ---------- */
 
 function temaActual() {
@@ -1665,7 +1698,6 @@ function temaActual() {
 function rotularTema() {
   $('#tema-texto').textContent = temaActual() === 'oscuro' ? 'Usar tema claro' : 'Usar tema oscuro';
 }
-
 function marcar(nombre, valor) {
   const radio = document.querySelector('input[name="' + nombre + '"][value="' + valor + '"]');
   if (radio) radio.checked = true;
@@ -1681,6 +1713,27 @@ function conectarControles() {
   const orden = (recordar('orden') || '').split(':');
   if (COMPARAR[orden[0]]) estado.orden = { campo: orden[0], sentido: orden[1] === '1' ? 1 : -1 };
 
+  // Pestañas: cada vista tiene su dirección (#hoy, #crecimiento, #videos, #radar).
+  document.addEventListener('click', function (e) {
+    const a = e.target.closest('a[href^="#"]');
+    if (!a || a.classList.contains('salto')) return;
+    const vista = vistaDeEnlace(a.getAttribute('href'));
+    if (vista !== estado.vista) {
+      e.preventDefault();
+      mostrarVista(vista);
+      const destino = a.getAttribute('href').slice(1);
+      const nodo = VISTAS.indexOf(destino) < 0 ? document.getElementById(destino) : null;
+      if (nodo) requestAnimationFrame(() => nodo.scrollIntoView({ behavior: sinMovimiento.matches ? 'auto' : 'smooth' }));
+      else window.scrollTo({ top: 0 });
+    }
+  });
+  window.addEventListener('hashchange', () => mostrarVista(vistaDeEnlace(location.hash), true));
+  document.addEventListener('keydown', function (e) {
+    if (e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+    const i = ['1', '2', '3', '4'].indexOf(e.key);
+    if (i >= 0) { mostrarVista(VISTAS[i]); window.scrollTo({ top: 0 }); }
+  });
+
   $('#periodo').addEventListener('change', function (e) {
     estado.periodo = e.target.value;
     guardar('periodo', estado.periodo);
@@ -1693,12 +1746,11 @@ function conectarControles() {
     marcar('canal', ''); marcar('tipo', '');
     pintarDatos();
   });
-  // La cifra «videos» de cada canal lleva a la tabla ya filtrada por ese canal.
+  // «Ver sus videos» de cada canal lleva a la tabla ya filtrada.
   for (const a of document.querySelectorAll('[data-filtro]')) {
     a.addEventListener('click', function () {
       estado.canal = a.dataset.filtro; estado.tipo = '';
       marcar('canal', estado.canal); marcar('tipo', '');
-      pintarDatos();
     });
   }
   $('#tabla-videos thead').addEventListener('click', function (e) {
@@ -1724,15 +1776,16 @@ function conectarControles() {
   $('#tend-barra').addEventListener('change', function (e) {
     if (e.target.name === 'tend-formato') estado.tendFormato = e.target.value;
     else if (e.target.name === 'tend-sin') estado.tendSin = e.target.value;
+    else if (e.target.name === 'tend-canal') estado.tendCanal = e.target.value;
     else if (e.target.name === 'tend-pais') { estado.pais = e.target.value; guardar('pais', estado.pais); }
     if (estado.modelo) pintarTendencias(estado.modelo);
-    // La barra se rehace con el filtro: el foco vuelve a la opción elegida.
     const elegido = document.querySelector('#tend-barra input[name="' + e.target.name + '"]:checked');
     if (elegido) elegido.focus({ preventScroll: true });
   });
 
-  for (const nombre of ['vistas', 'subs']) {
+  for (const nombre of ['vistas', 'subs', 'an-vistas', 'an-horas', 'an-subs']) {
     const boton = $('#' + nombre + '-tabla-boton');
+    if (!boton) continue;
     boton.addEventListener('click', function () {
       const enTabla = $('#' + nombre + '-tabla').hidden;
       boton.textContent = enTabla ? 'Ver como gráfica' : 'Ver como tabla';
@@ -1781,23 +1834,24 @@ function conectarControles() {
       ancho = nuevo;
       cancelAnimationFrame(pendiente);
       pendiente = requestAnimationFrame(pintarDatos);
-    }).observe($('.tablero'));
+    }).observe($('main'));
   }
 }
 
 function iniciar() {
   conectarControles();
   try { estado.externos = JSON.parse(recordar('externos') || 'null'); } catch (error) { guardar('externos', null); }
-  const guardado = recordar('datos');
-  if (guardado) {
-    try {
-      estado.modelo = preparar(JSON.parse(guardado));
-      pintar();
+  try {
+    const vivo = JSON.parse(recordar('vivo') || 'null'), panel = JSON.parse(recordar('panel') || 'null');
+    if (vivo && Array.isArray(vivo.canales)) {
+      estado.vivo = vivo; estado.panel = panel;
+      armarModelo();
       $('#estado').textContent = 'Lectura guardada ' + momento(estado.modelo.ahora, 'de');
-    } catch (error) {
-      guardar('datos', null);
     }
+  } catch (error) {
+    guardar('vivo', null); guardar('panel', null);
   }
+  mostrarVista(vistaDeEnlace(location.hash), true);
   leer();
   leerExternos();
   setInterval(function () { if (!document.hidden) leerExternos(); }, CADA_EXTERNOS_MS);

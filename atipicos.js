@@ -1,12 +1,12 @@
 // Atípicos del nicho: videos de canales chicos que van muy por encima de la
 // mediana de su propio canal. Los mide Atalaya Vigía una vez al día
-// (leerAtipicos) y los entrega aparte, con ?atipicos=1. Usa las utilidades de
+// y los entrega aparte, en /atipicos. Usa las utilidades de
 // atalaya.js, que se carga antes.
 'use strict';
 
-const FUENTE_ATI = FUENTE.replace('datos=1', 'atipicos=1');
+const FUENTE_ATI = VIGIA + '/atipicos';
 const CADA_ATI_MS = 10 * 60000;
-const GRUPOS_ATI = [['top', 'Los 10 mayores'], ['pa', 'Psique Ajena'], ['sa', 'Someday, Allegedly'], ['ref', 'Referencia']];
+const GRUPOS_ATI = [['top', 'Los 10 mayores'], ['kr', 'Autos'], ['bdp', 'Relatos']];
 // Palabras que no dicen de qué trata un video: no cuentan como tema repetido.
 const COMUNES_ATI = new Set(('para como esta este esto estos estas pero porque sobre entre desde hasta cuando donde quien quienes cual cuales todo toda todos todas '
   + 'nada nadie algo otro otra otros otras mismo misma solo sola sido fue fueron eran tiene tienen hacer hizo hace puede pueden asi aqui alla '
@@ -14,11 +14,12 @@ const COMUNES_ATI = new Set(('para como esta este esto estos estas pero porque s
   + 'nunca siempre gran grande grandes nuevo nueva mejor mejores peor peores increible impactante secreto secretos misterio oscuro oscura sabias '
   + 'pasado paso pasa queda quedo vez veces primer primera ultimo ultima despues antes ahora hoy tambien muy mas menos tan tanto realmente '
   + 'cosa cosas forma manera tiempo nombre gente persona personas hombre mujer ellos ellas nosotros usted cuenta cuentan dice dicen sera '
-  + 'minutos horas sabe saben cada rico rica ricos pobre pobres explica explicacion explicados explicadas resumen').split(' '));
+  + 'minutos horas sabe saben cada rico rica ricos pobre pobres explica explicacion explicados explicadas resumen '
+  + 'ella ellos tenia tenian saber sabia sabian vio vieron dijo dijeron').split(' '));
 
+// Los nichos de referencia de cada canal (kr_ref, bdp_ref) cuentan con su canal.
 function claveDeNicho(ni) {
-  if (ni === 'ref') return 'ref';
-  return ni.indexOf('pa_') === 0 ? 'pa' : ni.indexOf('sa_') === 0 ? 'sa' : 'ref';
+  return String(ni).indexOf('kr_') === 0 ? 'kr' : String(ni).indexOf('bdp_') === 0 ? 'bdp' : 'ref';
 }
 
 function palabrasDe(texto) {
@@ -73,7 +74,8 @@ function pintarAtipicos() {
   seccion.hidden = false;
   a.familias = {};
   for (const n of a.nichos || []) a.familias[n.id] = n.nombre;
-  a.familias.ref = 'Canal de referencia';
+  a.familias.kr_ref = 'Canales de referencia de autos';
+  a.familias.bdp_ref = 'Canales de referencia de relatos';
   const c = a.criterios || {};
   const r = a.resumen || {};
   const partes = ['Videos de canales con menos de ' + fmt(c.maxSubs || 50000) + ' suscriptores que van ' + fmt(c.veces || 5)
@@ -135,14 +137,12 @@ async function leerAtipicos() {
     // Sin esta lectura la página sigue; se muestra la guardada, si la hay.
     console.warn('atípicos: ' + error.message);
   }
-  try { pintarAtipicos(); } catch (error) { console.error('atípicos: ' + error); $('#atipicos').hidden = true; }
+  if (estado.vista === 'radar') try { pintarAtipicos(); } catch (error) { console.error('atípicos: ' + error); $('#atipicos').hidden = true; }
 }
+window.dibujarAtipicos = function () { try { pintarAtipicos(); } catch (error) { console.error('atípicos: ' + error); } };
 
 (function () {
   try { estado.atipicos = JSON.parse(recordar('atipicos') || 'null'); } catch (error) { guardar('atipicos', null); }
-  if (estado.atipicos) {
-    try { pintarAtipicos(); } catch (error) { console.error('atípicos: ' + error); }
-  }
   leerAtipicos();
   setInterval(function () { if (!document.hidden) leerAtipicos(); }, CADA_ATI_MS);
 })();
