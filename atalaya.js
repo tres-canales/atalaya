@@ -560,8 +560,8 @@ function pintarInsignias(m) {
     reemplazar(campo('subs-delta'), m.bitacoraDesde ? (netos[c.ci] ? [crear('strong', null, conSigno(netos[c.ci])), ' ' + ventana] : ['Sin cambio ' + ventana]) : []);
 
     const a = analiticaDe(m, c.ci);
-    medidor(campo('meta-subs'), c.subs, META_SUBS, 'Suscriptores', ritmoDeSubs(m, c));
-    if (a) medidor(campo('meta-horas'), Math.round(a.horasLargos365), META_HORAS, 'Horas de largos',
+    medidor(campo('meta-subs'), c.subs, META_SUBS, 'Meta de suscriptores', ritmoDeSubs(m, c));
+    if (a) medidor(campo('meta-horas'), Math.round(a.horasLargos365), META_HORAS, 'Meta de horas de largos',
       'Últimos 12 meses. Los Shorts suman aparte ' + fmt(Math.round(a.horas365 - a.horasLargos365)) + ' horas, que no cuentan para esta meta.');
     else reemplazar(campo('meta-horas'), [crear('p', { clase: 'meta-pie' }, 'Las horas de reproducción llegan con la primera lectura de YouTube Analytics.')]);
 
